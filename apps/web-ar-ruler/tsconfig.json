@@ -1,0 +1,8 @@
+{
+  "extends": "@plainoss/tsconfig/web.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "noEmit": true
+  },
+  "include": ["src"]
+}

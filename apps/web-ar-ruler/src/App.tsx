@@ -6,10 +6,11 @@ import {
   Hand,
   CheckCircle2,
   RotateCcw,
-  LogOut,
   Camera,
   AlertTriangle,
   Ruler,
+  X,
+  ChevronDown,
 } from "lucide-react";
 import {
   Point3D,
@@ -291,62 +292,82 @@ export function App() {
       {/* 4. Minimal In-AR Control Overlay */}
       {isARSupported && isARActive && (
         <div className="ar-minimal-overlay">
-          {/* Top Instruction Banner (safe area padding to avoid camera hole) */}
-          <div className="ar-top-banner">
-            <div className={`ar-status-pill ${isScanningClass}`}>
-              {isScanning ? (
-                <span className="pulsing-scan-dot" aria-hidden="true" />
-              ) : (
-                <span className="ar-status-icon-wrapper">{statusIcon}</span>
-              )}
-              <span>{statusMessage}</span>
-            </div>
-          </div>
-
-          {/* Bottom Minimal Controls */}
+          {/* Top Bar: [ Exit (X) ] --- [ Status Pill ] --- [ Clear (Reset) ] */}
           <div
-            className="ar-bottom-controls"
+            className="ar-top-bar"
             onPointerDown={handleUIControlInteraction}
-            onTouchStart={handleUIControlInteraction}
           >
             <button
-              className="btn-ar-action"
-              onClick={handleReset}
-              onPointerDown={handleUIControlInteraction}
-              title="Clear Measurement"
-            >
-              <RotateCcw size={16} strokeWidth={2} />
-              <span>Clear</span>
-            </button>
-
-            <div className="ar-unit-pill-group">
-              {(["m", "cm", "in", "ft"] as DistanceUnit[]).map((u) => (
-                <button
-                  key={u}
-                  className={`btn-unit-pill ${unit === u ? "active" : ""}`}
-                  onClick={(e) => {
-                    handleUIControlInteraction(e);
-                    setUnit(u);
-                  }}
-                  onPointerDown={handleUIControlInteraction}
-                >
-                  {u}
-                </button>
-              ))}
-            </div>
-
-            <button
-              className="btn-ar-action btn-ar-exit"
+              className="btn-ar-circle-icon btn-ar-exit"
               onClick={(e) => {
                 handleUIControlInteraction(e);
                 xrEngineRef.current?.endAR();
               }}
               onPointerDown={handleUIControlInteraction}
               title="Exit AR Mode"
+              aria-label="Exit AR Mode"
             >
-              <LogOut size={16} strokeWidth={2} />
-              <span>Exit</span>
+              <X size={20} strokeWidth={2.2} />
             </button>
+
+            <div className={`ar-status-pill ${isScanningClass}`}>
+              {isScanning ? (
+                <span className="pulsing-scan-dot" aria-hidden="true" />
+              ) : (
+                <span className="ar-status-icon-wrapper">{statusIcon}</span>
+              )}
+              <span className="ar-status-text">{statusMessage}</span>
+            </div>
+
+            <button
+              className={`btn-ar-circle-icon btn-ar-clear ${points.length > 0 ? "active" : ""}`}
+              onClick={handleReset}
+              onPointerDown={handleUIControlInteraction}
+              title="Clear Measurement"
+              aria-label="Clear Measurement"
+            >
+              <RotateCcw size={18} strokeWidth={2.2} />
+            </button>
+          </div>
+
+          {/* Bottom Bar: Android Material 3 Centered Unit Dropdown Selector */}
+          <div
+            className="ar-bottom-bar"
+            onPointerDown={handleUIControlInteraction}
+            onTouchStart={handleUIControlInteraction}
+          >
+            <div className="ar-unit-dropdown-wrapper">
+              <select
+                className="ar-unit-select"
+                value={unit}
+                onChange={(e) => {
+                  handleUIControlInteraction(e);
+                  const newUnit = e.target.value as DistanceUnit;
+                  setUnit(newUnit);
+                  if (xrEngineRef.current) {
+                    xrEngineRef.current.setUnit(newUnit);
+                  }
+                }}
+                onPointerDown={handleUIControlInteraction}
+                onTouchStart={handleUIControlInteraction}
+                aria-label="Select Measurement Unit"
+              >
+                <option value="m">Meters (m)</option>
+                <option value="cm">Centimeters (cm)</option>
+                <option value="in">Inches (in)</option>
+                <option value="ft">Feet (ft)</option>
+                <option value="mm">Millimeters (mm)</option>
+                <option value="yd">Yards (yd)</option>
+              </select>
+              <div className="ar-unit-select-badge" aria-hidden="true">
+                <span className="unit-label">{unit.toUpperCase()}</span>
+                <ChevronDown
+                  size={14}
+                  strokeWidth={2.5}
+                  className="unit-chevron"
+                />
+              </div>
+            </div>
           </div>
         </div>
       )}

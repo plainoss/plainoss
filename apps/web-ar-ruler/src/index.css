@@ -194,35 +194,110 @@ body {
   box-shadow: 0 4px 16px rgba(56, 189, 248, 0.6);
 }
 
+/* Android-Style Top AR Action Bar */
+.ar-top-bar {
+  position: absolute;
+  top: max(1rem, env(safe-area-inset-top, 24px));
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  padding: 0 1rem;
+  z-index: 15;
+  pointer-events: auto;
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.btn-ar-circle-icon {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.78);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+  cursor: pointer;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.45);
+  transition:
+    transform 0.1s ease,
+    background 0.15s ease,
+    border-color 0.15s ease;
+  flex-shrink: 0;
+}
+
+.btn-ar-circle-icon:active {
+  transform: scale(0.92);
+}
+
+.btn-ar-exit {
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #fca5a5;
+}
+
+.btn-ar-exit:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: #ef4444;
+}
+
+.btn-ar-clear {
+  opacity: 0.55;
+  color: #cbd5e1;
+}
+
+.btn-ar-clear.active {
+  opacity: 1;
+  color: #38bdf8;
+  border-color: rgba(56, 189, 248, 0.5);
+  box-shadow:
+    0 4px 20px rgba(0, 0, 0, 0.45),
+    0 0 12px rgba(56, 189, 248, 0.3);
+}
+
 .ar-status-pill {
-  background: var(--bg-glass);
+  flex: 1;
+  min-width: 0;
+  background: rgba(15, 23, 42, 0.78);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border: 1px solid rgba(56, 189, 248, 0.4);
-  padding: 0.65rem 1.35rem;
+  padding: 0.6rem 0.85rem;
   border-radius: var(--radius-full);
-  font-size: 0.92rem;
+  font-size: 0.84rem;
   font-weight: 700;
   color: #ffffff;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.55);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.45);
   letter-spacing: -0.01em;
   display: inline-flex;
   align-items: center;
-  gap: 0.55rem;
-  text-align: center;
-  max-width: 90vw;
+  justify-content: center;
+  gap: 0.45rem;
+}
+
+.ar-status-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .ar-status-pill.scanning {
   border-color: rgba(245, 158, 11, 0.6);
   box-shadow:
-    0 6px 24px rgba(0, 0, 0, 0.55),
+    0 4px 20px rgba(0, 0, 0, 0.45),
     0 0 16px rgba(245, 158, 11, 0.25);
 }
 
 .pulsing-scan-dot {
-  width: 10px;
-  height: 10px;
+  width: 9px;
+  height: 9px;
+  min-width: 9px;
   border-radius: 50%;
   background: #f59e0b;
   box-shadow: 0 0 10px #f59e0b;
@@ -244,79 +319,75 @@ body {
   }
 }
 
-/* Bottom Minimal Controls */
-.ar-bottom-controls {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.6rem;
-  pointer-events: auto;
-}
-
-.ar-unit-pill-group {
-  display: flex;
-  background: var(--bg-glass);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-full);
-  padding: 3px;
-  gap: 3px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
-}
-
-.btn-unit-pill {
-  background: transparent;
-  border: none;
-  color: var(--text-secondary);
-  font-family: inherit;
-  font-size: 0.85rem;
-  font-weight: 700;
-  padding: 0.45rem 0.85rem;
-  border-radius: var(--radius-full);
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.btn-unit-pill.active {
-  background: var(--accent);
-  color: #0f172a;
-}
-
 .ar-status-icon-wrapper {
   display: inline-flex;
   align-items: center;
   color: #38bdf8;
+  flex-shrink: 0;
 }
 
-.btn-ar-action {
-  background: var(--bg-glass);
+/* Android Material 3 Bottom Bar with Centered Unit Selector */
+.ar-bottom-bar {
+  position: absolute;
+  bottom: max(1.5rem, env(safe-area-inset-bottom, 24px));
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 15;
+  pointer-events: none;
+}
+
+.ar-unit-dropdown-wrapper {
+  position: relative;
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ar-unit-select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 2;
+  font-size: 1rem;
+}
+
+.ar-unit-select-badge {
+  background: rgba(15, 23, 42, 0.82);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border: 1px solid var(--border);
-  color: var(--text-primary);
-  font-family: inherit;
-  font-size: 0.85rem;
-  font-weight: 700;
-  padding: 0.6rem 1.1rem;
+  border: 1px solid rgba(56, 189, 248, 0.45);
   border-radius: var(--radius-full);
-  cursor: pointer;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  padding: 0.6rem 1.15rem;
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
+  box-shadow:
+    0 6px 24px rgba(0, 0, 0, 0.5),
+    0 0 16px rgba(56, 189, 248, 0.2);
+  color: #ffffff;
+  font-size: 0.9rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
   transition:
     transform 0.1s ease,
+    border-color 0.15s ease,
     background 0.15s ease;
 }
 
-.btn-ar-action:active {
-  transform: scale(0.95);
+.unit-chevron {
+  color: #38bdf8;
 }
 
-.btn-ar-exit {
-  border-color: rgba(239, 68, 68, 0.4);
-  color: #fca5a5;
+.ar-unit-dropdown-wrapper:active .ar-unit-select-badge {
+  transform: scale(0.94);
+  background: rgba(56, 189, 248, 0.2);
 }
 
 /* Unsupported Device Screen */

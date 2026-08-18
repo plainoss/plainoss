@@ -111,7 +111,6 @@ fs.writeFileSync(
     {
       extends: "@plainoss/tsconfig/web.json",
       compilerOptions: {
-        baseUrl: ".",
         noEmit: true,
       },
       include: ["src"],
@@ -240,6 +239,12 @@ createRoot(document.getElementById('root')!).render(
 );
 `,
 );
+
+fs.writeFileSync(
+  path.join(webSrcDir, "vite-env.d.ts"),
+  `/// <reference types="vite/client" />
+`,
+);
 console.log(`✅ Created Standalone Web App: apps/web-${toolKebab}/`);
 
 // 3. apps/mobile-<toolKebab>/
@@ -314,7 +319,6 @@ fs.writeFileSync(
     {
       extends: "@plainoss/tsconfig/react-native.json",
       compilerOptions: {
-        baseUrl: ".",
         noEmit: true,
       },
       include: ["src", "App.tsx", "index.js"],

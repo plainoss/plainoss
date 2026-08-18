@@ -1,6 +1,8 @@
 /**
- * Pure WebGL WebXR AR Ruler Engine with 3D Spatial Billboard Measurements,
- * Interactive 3D Handle Manipulation, and Dynamic Physical Surface Plane Visualizations.
+ * Pure WebGL WebXR AR Ruler Engine
+ * Visualizes 3D light dot feature point cloud on surfaces during scanning,
+ * a clean minimalist placement pointer when surface is detected,
+ * and 3D volumetric laser measurement lines with interactive handles.
  */
 
 import {
@@ -21,6 +23,15 @@ export interface XREngineCallbacks {
   onHandleDropped?: (index: number, points: Point3D[]) => void;
 }
 
+interface FeatureDot {
+  x: number;
+  y: number;
+  z: number;
+  alpha: number;
+  life: number;
+  maxLife: number;
+}
+
 export class WebXREngine {
   private gl: WebGL2RenderingContext | WebGLRenderingContext;
   private session: any = null;
@@ -32,10 +43,15 @@ export class WebXREngine {
   // Shaders & Buffers
   private geometryProgram!: WebGLProgram;
   private billboardProgram!: WebGLProgram;
-  private surfaceProgram!: WebGLProgram;
+  private pointCloudProgram!: WebGLProgram;
+
   private vertexBuffer!: WebGLBuffer;
   private quadBuffer!: WebGLBuffer;
-  private surfacePlaneBuffer!: WebGLBuffer;
+  private pointCloudBuffer!: WebGLBuffer;
+
+  // Feature Points / Light Dots Simulation on physical surfaces
+  private featureDots: FeatureDot[] = [];
+  private maxFeatureDots: number = 80;
 
   // Text Texture for 3D In-AR Measurement Label
   private textCanvas: HTMLCanvasElement;
@@ -86,12 +102,13 @@ export class WebXREngine {
 
     this.initShaders();
     this.initTextTexture();
+    this.initFeatureDots();
   }
 
   private initShaders(): void {
     const gl = this.gl;
 
-    // 1. Geometry Shader (for 3D cylinders, spheres, torus reticle)
+    // 1. Geometry Shader (for 3D cylinders, spheres, clean reticle ring)
     const vsGeom = `
       attribute vec3 aPosition;
       uniform mat4 uProjectionMatrix;
@@ -146,83 +163,85 @@ export class WebXREngine {
     ]);
     gl.bufferData(gl.ARRAY_BUFFER, quadVerts, gl.STATIC_DRAW);
 
-    // 3. Dynamic Surface Plane Shader (Radiating radar ripples, dot matrix & target ring on physical floor/table)
-    const vsSurface = `
+    // 3. 3D Light Dots Point Cloud Shader (Soft glowing light dots on surface before pointer lock)
+    const vsPointCloud = `
       attribute vec3 aPosition;
+      attribute float aAlpha;
       uniform mat4 uProjectionMatrix;
       uniform mat4 uViewMatrix;
-      uniform mat4 uModelMatrix;
-      varying vec2 vPlaneUv;
+      varying float vAlpha;
       void main() {
-        vPlaneUv = aPosition.xz; // Surface plane coordinates (-1..1)
-        gl_Position = uProjectionMatrix * uViewMatrix * uModelMatrix * vec4(aPosition, 1.0);
+        vAlpha = aAlpha;
+        vec4 viewPos = uViewMatrix * vec4(aPosition, 1.0);
+        gl_Position = uProjectionMatrix * viewPos;
+        // Point size inversely proportional to camera distance
+        float dist = max(0.5, -viewPos.z);
+        gl_PointSize = clamp(140.0 / dist, 5.0, 24.0);
       }
     `;
 
-    const fsSurface = `
+    const fsPointCloud = `
       precision mediump float;
-      varying vec2 vPlaneUv;
-      uniform float uTime;
-      uniform vec4 uColor;
-
+      varying float vAlpha;
       void main() {
-        float dist = length(vPlaneUv);
-        if (dist > 1.0) discard;
-
-        // Outer target ring
-        float ring = smoothstep(0.04, 0.0, abs(dist - 0.85));
-
-        // Secondary inner target ring
-        float innerRing = smoothstep(0.03, 0.0, abs(dist - 0.42));
-
-        // Dynamic radiating radar wave moving across the physical surface
-        float wave = fract(dist * 2.2 - uTime * 0.85);
-        float waveAlpha = smoothstep(0.0, 0.35, wave) * (1.0 - wave) * (1.0 - dist);
-
-        // Center target dot
-        float centerDot = smoothstep(0.08, 0.0, dist);
-
-        // Crosshair ticks
-        float tickX = smoothstep(0.015, 0.0, abs(vPlaneUv.y)) * smoothstep(0.9, 0.25, abs(vPlaneUv.x));
-        float tickY = smoothstep(0.015, 0.0, abs(vPlaneUv.x)) * smoothstep(0.9, 0.25, abs(vPlaneUv.y));
-        float ticks = max(tickX, tickY) * 0.8;
-
-        // Planar dot matrix pattern
-        vec2 dotGrid = fract(vPlaneUv * 6.0 + 0.5) - 0.5;
-        float dots = smoothstep(0.14, 0.0, length(dotGrid)) * (1.0 - dist) * 0.45;
-
-        float alpha = clamp(ring * 0.95 + innerRing * 0.55 + waveAlpha * 0.6 + centerDot * 0.95 + ticks + dots, 0.0, 1.0);
-
-        gl_FragColor = vec4(uColor.rgb, alpha * uColor.a);
+        vec2 coord = gl_PointCoord - vec2(0.5);
+        float dist = length(coord);
+        if (dist > 0.5) discard;
+        // Soft glowing light dot radial falloff
+        float glow = smoothstep(0.5, 0.0, dist);
+        float core = smoothstep(0.2, 0.0, dist);
+        float alpha = (glow * 0.65 + core * 0.35) * vAlpha;
+        gl_FragColor = vec4(0.85, 0.95, 1.0, alpha);
       }
     `;
 
-    this.surfaceProgram = this.createProgram(vsSurface, fsSurface);
-    this.surfacePlaneBuffer = gl.createBuffer()!;
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.surfacePlaneBuffer);
-    // 0.4m x 0.4m planar quad along X-Z plane
-    const radius = 0.22;
-    const surfaceVerts = new Float32Array([
-      -radius,
-      0,
-      -radius,
-      radius,
-      0,
-      -radius,
-      -radius,
-      0,
-      radius,
-      -radius,
-      0,
-      radius,
-      radius,
-      0,
-      -radius,
-      radius,
-      0,
-      radius,
-    ]);
-    gl.bufferData(gl.ARRAY_BUFFER, surfaceVerts, gl.STATIC_DRAW);
+    this.pointCloudProgram = this.createProgram(vsPointCloud, fsPointCloud);
+    this.pointCloudBuffer = gl.createBuffer()!;
+  }
+
+  private initFeatureDots(): void {
+    this.featureDots = [];
+  }
+
+  /**
+   * Updates light dots scattered across the estimated physical surface in front of camera.
+   */
+  private updateFeatureDots(camPos: Point3D, camForward: Point3D): void {
+    // Age existing dots
+    for (let i = this.featureDots.length - 1; i >= 0; i--) {
+      const dot = this.featureDots[i]!;
+      dot.life += 1;
+      // Fade in then fade out
+      const progress = dot.life / dot.maxLife;
+      if (progress < 0.25) {
+        dot.alpha = progress / 0.25;
+      } else {
+        dot.alpha = 1.0 - (progress - 0.25) / 0.75;
+      }
+      if (dot.life >= dot.maxLife) {
+        this.featureDots.splice(i, 1);
+      }
+    }
+
+    // Spawn new light dots around the focal area on the surface plane
+    const spawnTarget = this.reticlePosition || {
+      x: camPos.x + camForward.x * 1.2,
+      y: camPos.y - 0.6, // estimated floor height
+      z: camPos.z + camForward.z * 1.2,
+    };
+
+    while (this.featureDots.length < this.maxFeatureDots) {
+      const angle = Math.random() * Math.PI * 2;
+      const radius = 0.08 + Math.random() * 0.65;
+      this.featureDots.push({
+        x: spawnTarget.x + Math.cos(angle) * radius,
+        y: spawnTarget.y + (Math.random() - 0.5) * 0.05,
+        z: spawnTarget.z + Math.sin(angle) * radius,
+        alpha: 0,
+        life: 0,
+        maxLife: 40 + Math.floor(Math.random() * 60),
+      });
+    }
   }
 
   private createProgram(vsSource: string, fsSource: string): WebGLProgram {
@@ -383,6 +402,7 @@ export class WebXREngine {
     this.isXRActive = true;
     this.draggedPointIndex = null;
     this.hoveredHandleIndex = null;
+    this.featureDots = [];
 
     const baseLayer = new (window as any).XRWebGLLayer(session, this.gl);
     await session.updateRenderState({ baseLayer });
@@ -449,12 +469,13 @@ export class WebXREngine {
       this.hitTestSource = null;
       this.draggedPointIndex = null;
       this.hoveredHandleIndex = null;
+      this.featureDots = [];
       this.callbacks.onSessionEnded();
     });
 
     this.callbacks.onSessionStarted();
 
-    const onXRFrame = (time: number, frame: any) => {
+    const onXRFrame = (_time: number, frame: any) => {
       if (!this.session || !this.isXRActive) return;
 
       const gl = this.gl;
@@ -503,7 +524,13 @@ export class WebXREngine {
         gl.clearColor(0, 0, 0, 0);
         gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-        const timeSec = time * 0.001;
+        // Extract camera position and forward vector
+        const camPos = pose.transform.position;
+        const camMat = pose.transform.matrix;
+        const camForward = { x: -camMat[8], y: -camMat[9], z: -camMat[10] };
+
+        // Update light dots on surfaces
+        this.updateFeatureDots(camPos, camForward);
 
         for (const view of pose.views) {
           const viewport = layer.getViewport(view);
@@ -512,7 +539,6 @@ export class WebXREngine {
           this.renderScene(
             view.projectionMatrix,
             view.transform.inverse.matrix,
-            timeSec,
           );
         }
       }
@@ -534,6 +560,7 @@ export class WebXREngine {
       this.isXRActive = false;
       this.draggedPointIndex = null;
       this.hoveredHandleIndex = null;
+      this.featureDots = [];
     }
   }
 
@@ -544,7 +571,6 @@ export class WebXREngine {
   private renderScene(
     projectionMatrix: Float32Array,
     viewMatrix: Float32Array,
-    timeSec: number,
   ): void {
     const gl = this.gl;
     gl.enable(gl.DEPTH_TEST);
@@ -556,53 +582,54 @@ export class WebXREngine {
     ]);
 
     // ==========================================
-    // 1. RENDER 3D PHYSICAL SURFACE PLANE VISUALIZATION
+    // 1. RENDER 3D LIGHT DOTS FEATURE POINT CLOUD (Surface Scanning Feedback)
     // ==========================================
-    if (this.reticleMatrix) {
-      gl.useProgram(this.surfaceProgram);
+    // Show light dots across surfaces while scanning and discovering planes
+    if (
+      this.featureDots.length > 0 &&
+      (!this.reticleMatrix || this.points.length === 0)
+    ) {
+      gl.useProgram(this.pointCloudProgram);
 
-      const uSurfProj = gl.getUniformLocation(
-        this.surfaceProgram,
+      const uProj = gl.getUniformLocation(
+        this.pointCloudProgram,
         "uProjectionMatrix",
       );
-      const uSurfView = gl.getUniformLocation(
-        this.surfaceProgram,
+      const uView = gl.getUniformLocation(
+        this.pointCloudProgram,
         "uViewMatrix",
       );
-      const uSurfModel = gl.getUniformLocation(
-        this.surfaceProgram,
-        "uModelMatrix",
-      );
-      const uSurfTime = gl.getUniformLocation(this.surfaceProgram, "uTime");
-      const uSurfColor = gl.getUniformLocation(this.surfaceProgram, "uColor");
+      gl.uniformMatrix4fv(uProj, false, projectionMatrix);
+      gl.uniformMatrix4fv(uView, false, viewMatrix);
 
-      gl.uniformMatrix4fv(uSurfProj, false, projectionMatrix);
-      gl.uniformMatrix4fv(uSurfView, false, viewMatrix);
-      gl.uniformMatrix4fv(uSurfModel, false, this.reticleMatrix);
-      gl.uniform1f(uSurfTime, timeSec);
-
-      // Color scheme: Green when dragging handle, Gold when over handle, Cyan when scanning/placing
-      if (this.draggedPointIndex !== null) {
-        gl.uniform4f(uSurfColor, 0.13, 0.77, 0.36, 0.95);
-      } else if (this.hoveredHandleIndex !== null) {
-        gl.uniform4f(uSurfColor, 0.98, 0.75, 0.18, 0.95);
-      } else {
-        gl.uniform4f(uSurfColor, 0.22, 0.74, 0.97, 0.95);
+      const dotVerts: number[] = [];
+      for (const d of this.featureDots) {
+        dotVerts.push(d.x, d.y, d.z, d.alpha);
       }
 
-      const surfPosAttr = gl.getAttribLocation(
-        this.surfaceProgram,
-        "aPosition",
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.pointCloudBuffer);
+      gl.bufferData(
+        gl.ARRAY_BUFFER,
+        new Float32Array(dotVerts),
+        gl.DYNAMIC_DRAW,
       );
-      gl.enableVertexAttribArray(surfPosAttr);
-      gl.bindBuffer(gl.ARRAY_BUFFER, this.surfacePlaneBuffer);
-      gl.vertexAttribPointer(surfPosAttr, 3, gl.FLOAT, false, 0, 0);
 
-      gl.drawArrays(gl.TRIANGLES, 0, 6);
+      const posAttr = gl.getAttribLocation(this.pointCloudProgram, "aPosition");
+      const alphaAttr = gl.getAttribLocation(this.pointCloudProgram, "aAlpha");
+
+      gl.enableVertexAttribArray(posAttr);
+      gl.vertexAttribPointer(posAttr, 3, gl.FLOAT, false, 16, 0);
+
+      gl.enableVertexAttribArray(alphaAttr);
+      gl.vertexAttribPointer(alphaAttr, 1, gl.FLOAT, false, 16, 12);
+
+      gl.drawArrays(gl.POINTS, 0, this.featureDots.length);
+
+      gl.disableVertexAttribArray(alphaAttr);
     }
 
     // ==========================================
-    // 2. RENDER 3D GEOMETRY (3D Tubes, Spheres)
+    // 2. RENDER 3D PLACEMENT RETICLE & 3D GEOMETRY
     // ==========================================
     gl.useProgram(this.geometryProgram);
 
@@ -623,10 +650,44 @@ export class WebXREngine {
     gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexBuffer);
     gl.vertexAttribPointer(posAttr, 3, gl.FLOAT, false, 0, 0);
 
+    // 2a. Clean, Minimalist Placement Pointer Ring (when surface plane is detected)
+    if (this.reticleMatrix) {
+      gl.uniformMatrix4fv(uModel, false, this.reticleMatrix);
+
+      // Color scheme: Green when dragging, Gold when over handle, Clean Cyan for placement
+      if (this.draggedPointIndex !== null) {
+        gl.uniform4f(uColor, 0.13, 0.77, 0.36, 0.95);
+      } else if (this.hoveredHandleIndex !== null) {
+        gl.uniform4f(uColor, 0.98, 0.75, 0.18, 0.95);
+      } else {
+        gl.uniform4f(uColor, 0.22, 0.74, 0.97, 0.95);
+      }
+
+      // Elegant clean circular reticle ring ($6\text{cm}$ radius)
+      const torusVerts = this.createTorusMesh(0.06, 0.0035, 28, 8);
+      gl.bufferData(
+        gl.ARRAY_BUFFER,
+        new Float32Array(torusVerts),
+        gl.DYNAMIC_DRAW,
+      );
+      gl.drawArrays(gl.TRIANGLES, 0, torusVerts.length / 3);
+
+      // Clean center targeting dot ($6\text{mm}$)
+      const dotVerts = this.createSphereMesh({ x: 0, y: 0, z: 0 }, 0.006, 8);
+      gl.bufferData(
+        gl.ARRAY_BUFFER,
+        new Float32Array(dotVerts),
+        gl.DYNAMIC_DRAW,
+      );
+      gl.drawArrays(gl.TRIANGLES, 0, dotVerts.length / 3);
+
+      gl.uniformMatrix4fv(uModel, false, identity);
+    }
+
     let measurementMidpoint: Point3D | null = null;
     let currentDistanceValue: number = 0;
 
-    // 2a. Live Guidance Line (Point 1 -> Reticle)
+    // 2b. Live Guidance Line (Point 1 -> Reticle)
     if (
       this.points.length === 1 &&
       this.points[0] &&
@@ -657,7 +718,7 @@ export class WebXREngine {
       };
     }
 
-    // 2b. Locked / Active Measurement Line (Point 1 -> Point 2)
+    // 2c. Locked / Active Measurement Line (Point 1 -> Point 2)
     if (this.points.length >= 2 && this.points[0] && this.points[1]) {
       gl.uniform4f(uColor, 0.23, 0.51, 0.96, 1.0); // Bold Blue Tube
 
@@ -683,7 +744,7 @@ export class WebXREngine {
       };
     }
 
-    // 2c. Render 3D Handles / Anchor Spheres
+    // 2d. Render 3D Handles / Anchor Spheres
     for (let i = 0; i < this.points.length; i++) {
       const p = this.points[i];
       if (!p) continue;
@@ -860,5 +921,41 @@ export class WebXREngine {
       y: center.y + radius * Math.cos(theta),
       z: center.z + radius * Math.sin(theta) * Math.sin(phi),
     };
+  }
+
+  private createTorusMesh(
+    radius: number,
+    tubeRadius: number,
+    radialSegments: number = 28,
+    tubularSegments: number = 8,
+  ): number[] {
+    const verts: number[] = [];
+
+    for (let j = 0; j < radialSegments; j++) {
+      const u1 = (j / radialSegments) * Math.PI * 2;
+      const u2 = ((j + 1) / radialSegments) * Math.PI * 2;
+
+      for (let i = 0; i < tubularSegments; i++) {
+        const v1 = (i / tubularSegments) * Math.PI * 2;
+        const v2 = ((i + 1) / tubularSegments) * Math.PI * 2;
+
+        const p1 = this.torusPoint(u1, v1, radius, tubeRadius);
+        const p2 = this.torusPoint(u2, v1, radius, tubeRadius);
+        const p3 = this.torusPoint(u1, v2, radius, tubeRadius);
+        const p4 = this.torusPoint(u2, v2, radius, tubeRadius);
+
+        verts.push(p1.x, p1.y, p1.z, p3.x, p3.y, p3.z, p2.x, p2.y, p2.z);
+        verts.push(p2.x, p2.y, p2.z, p3.x, p3.y, p3.z, p4.x, p4.y, p4.z);
+      }
+    }
+
+    return verts;
+  }
+
+  private torusPoint(u: number, v: number, r: number, tubeR: number): Point3D {
+    const x = (r + tubeR * Math.cos(v)) * Math.cos(u);
+    const y = tubeR * Math.sin(v);
+    const z = (r + tubeR * Math.cos(v)) * Math.sin(u);
+    return { x, y, z };
   }
 }

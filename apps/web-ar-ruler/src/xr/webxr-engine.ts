@@ -570,9 +570,9 @@ export class WebXREngine {
     ]);
 
     // ==========================================
-    // 1. RENDER HIGH-VISIBILITY ROOM-SCALE PHYSICAL SURFACE PLANE GRID
+    // 1. RENDER SCANNING LIGHT-DOT SURFACE GRID (Active ONLY while scanning for surfaces)
     // ==========================================
-    if (roomGridDots.length > 0) {
+    if (roomGridDots.length > 0 && !this.reticleMatrix) {
       // Disable depth write so particles blend crisply on top of camera without depth clipping
       gl.depthMask(false);
       gl.useProgram(this.pointCloudProgram);

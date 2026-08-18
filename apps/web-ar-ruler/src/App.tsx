@@ -35,6 +35,7 @@ export function App() {
     null,
   );
   const [points, setPoints] = useState<Point3D[]>([]);
+  const [planesCount, setPlanesCount] = useState<number>(0);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
   // Canvas References
@@ -140,18 +141,23 @@ export function App() {
             );
           }
         },
+        onPlanesDetected: (count) => {
+          setPlanesCount(count);
+        },
         onSessionStarted: () => {
           setIsARActive(true);
           setIsScanning(true);
           setDraggedHandleIndex(null);
           setHoveredHandleIndex(null);
           setPoints([]);
+          setPlanesCount(0);
         },
         onSessionEnded: () => {
           setIsARActive(false);
           setIsScanning(true);
           setDraggedHandleIndex(null);
           setHoveredHandleIndex(null);
+          setPlanesCount(0);
         },
       });
       engine.setUnit(unitRef.current);
@@ -222,7 +228,10 @@ export function App() {
 
   if (isScanning) {
     statusIcon = <Scan size={16} aria-hidden="true" />;
-    statusMessage = "Move phone slowly to detect surface...";
+    statusMessage =
+      planesCount > 0
+        ? `${planesCount} surface${planesCount > 1 ? "s" : ""} detected — Aim to set Point 1`
+        : "Move phone slowly to detect surface...";
   } else if (draggedHandleIndex !== null) {
     statusIcon = <Move size={16} aria-hidden="true" />;
     statusMessage = `Moving Point ${draggedHandleIndex + 1} — Aim & tap to lock`;
@@ -231,7 +240,10 @@ export function App() {
     statusMessage = `Tap to grab Point ${hoveredHandleIndex + 1} & edit line`;
   } else if (points.length === 0) {
     statusIcon = <Crosshair size={16} aria-hidden="true" />;
-    statusMessage = "Surface detected — Tap to set Point 1";
+    statusMessage =
+      planesCount > 0
+        ? `${planesCount} surface${planesCount > 1 ? "s" : ""} mapped — Tap to set Point 1`
+        : "Surface detected — Tap to set Point 1";
   } else if (points.length === 1) {
     statusIcon = <Ruler size={16} aria-hidden="true" />;
     statusMessage = "Move to endpoint & tap for Point 2";

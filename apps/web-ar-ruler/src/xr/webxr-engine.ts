@@ -1,7 +1,7 @@
 /**
  * Pure WebGL WebXR AR Ruler Engine
- * Visualizes high-visibility room-scale physical surface plane grid matrix across detected floors/surfaces,
- * a clean minimalist placement pointer when surface is detected,
+ * Visualizes high-visibility room-scale physical surface plane grid matrix across detected floors/surfaces
+ * via the WebXR Plane Detection API, a clean minimalist placement pointer when surface is detected,
  * and 3D volumetric laser measurement lines with interactive handles.
  */
 
@@ -21,6 +21,23 @@ export interface XREngineCallbacks {
   onHandleGrabbed?: (index: number, points: Point3D[]) => void;
   onHandleMoved?: (index: number, points: Point3D[]) => void;
   onHandleDropped?: (index: number, points: Point3D[]) => void;
+  onPlanesDetected?: (count: number) => void;
+}
+
+interface CachedPlaneData {
+  lastChangedTime: number;
+  boundaryVerts: Float32Array;
+  gridDots: Float32Array;
+  dotCount: number;
+}
+
+interface PlaneRenderData {
+  modelMatrix: Float32Array;
+  boundaryVerts: Float32Array;
+  gridDots: Float32Array;
+  dotCount: number;
+  orientation: string;
+  semanticLabel?: string;
 }
 
 export class WebXREngine {
@@ -52,7 +69,11 @@ export class WebXREngine {
   public reticleMatrix: Float32Array | null = null;
   public unit: DistanceUnit = "m";
 
-  // Room-Scale Surface Plane Tracking
+  // WebXR Plane Detection State & Cache
+  private planeMeshCache: WeakMap<object, CachedPlaneData> = new WeakMap();
+  private lastDetectedPlaneCount: number = 0;
+
+  // Room-Scale Fallback Surface Plane Tracking
   private detectedGroundY: number | null = null;
 
   // Handle Editing State (Moving existing points in AR space)
@@ -97,7 +118,7 @@ export class WebXREngine {
   private initShaders(): void {
     const gl = this.gl;
 
-    // 1. Geometry Shader (for 3D cylinders, spheres, clean reticle ring)
+    // 1. Geometry Shader (for 3D cylinders, spheres, clean reticle ring, and plane boundary outlines)
     const vsGeom = `
       attribute vec3 aPosition;
       uniform mat4 uProjectionMatrix;
@@ -152,16 +173,17 @@ export class WebXREngine {
     ]);
     gl.bufferData(gl.ARRAY_BUFFER, quadVerts, gl.STATIC_DRAW);
 
-    // 3. High-Visibility 3D Light-Dot Surface Grid Shader
+    // 3. High-Visibility 3D Light-Dot Surface Grid Shader (supports model transforms for XRPlanes)
     const vsPointCloud = `
       attribute vec3 aPosition;
       attribute float aAlpha;
       uniform mat4 uProjectionMatrix;
       uniform mat4 uViewMatrix;
+      uniform mat4 uModelMatrix;
       varying float vAlpha;
       void main() {
         vAlpha = aAlpha;
-        vec4 viewPos = uViewMatrix * vec4(aPosition, 1.0);
+        vec4 viewPos = uViewMatrix * uModelMatrix * vec4(aPosition, 1.0);
         gl_Position = uProjectionMatrix * viewPos;
         float dist = max(0.3, -viewPos.z);
         gl_PointSize = clamp(220.0 / dist, 10.0, 36.0);
@@ -188,7 +210,81 @@ export class WebXREngine {
   }
 
   /**
-   * Generates a high-visibility room-scale planar grid of light dots across the entire detected physical floor.
+   * Helper to check if a 2D point (x, z) lies within an arbitrary 2D polygon.
+   */
+  private isPointInPolygon(
+    x: number,
+    z: number,
+    polygon: ReadonlyArray<{ x: number; z: number }>,
+  ): boolean {
+    let inside = false;
+    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+      const xi = polygon[i]!.x;
+      const zi = polygon[i]!.z;
+      const xj = polygon[j]!.x;
+      const zj = polygon[j]!.z;
+      const intersect =
+        zi > z !== zj > z && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi;
+      if (intersect) inside = !inside;
+    }
+    return inside;
+  }
+
+  /**
+   * Builds line-loop boundary vertices for an XRPlane polygon in its local coordinate space (Y = 0).
+   */
+  private buildPlaneBoundaryVertices(
+    polygon: ReadonlyArray<{ x: number; z: number }>,
+  ): Float32Array {
+    const verts = new Float32Array(polygon.length * 3);
+    for (let i = 0; i < polygon.length; i++) {
+      const p = polygon[i]!;
+      verts[i * 3] = p.x;
+      verts[i * 3 + 1] = 0;
+      verts[i * 3 + 2] = p.z;
+    }
+    return verts;
+  }
+
+  /**
+   * Generates a 2D matrix of light-dots strictly contained within an XRPlane's polygon boundary.
+   */
+  private generatePlaneGridDots(
+    polygon: ReadonlyArray<{ x: number; z: number }>,
+    spacing: number = 0.12,
+  ): Float32Array {
+    if (polygon.length < 3) return new Float32Array(0);
+
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minZ = Infinity;
+    let maxZ = -Infinity;
+    for (let i = 0; i < polygon.length; i++) {
+      const p = polygon[i]!;
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+      if (p.z < minZ) minZ = p.z;
+      if (p.z > maxZ) maxZ = p.z;
+    }
+
+    const startX = Math.ceil(minX / spacing) * spacing;
+    const startZ = Math.ceil(minZ / spacing) * spacing;
+    const dots: number[] = [];
+
+    for (let x = startX; x <= maxX; x += spacing) {
+      for (let z = startZ; z <= maxZ; z += spacing) {
+        if (this.isPointInPolygon(x, z, polygon)) {
+          // Point is strictly bounded inside physical plane geometry: [x, y, z, alpha]
+          dots.push(x, 0, z, 0.85);
+        }
+      }
+    }
+
+    return new Float32Array(dots);
+  }
+
+  /**
+   * Fallback procedural room-scale planar grid when no physical XRPlanes have been detected yet.
    */
   private generateRoomPlaneGrid(timeSec: number, camPos: Point3D): number[] {
     const groundY =
@@ -199,8 +295,8 @@ export class WebXREngine {
           : camPos.y - 0.65;
 
     const dots: number[] = [];
-    const spacing = 0.15; // 15cm grid pitch
-    const maxRadius = 3.2; // 3.2m radius
+    const spacing = 0.15;
+    const maxRadius = 3.2;
 
     const snapX = Math.round(camPos.x / spacing) * spacing;
     const snapZ = Math.round(camPos.z / spacing) * spacing;
@@ -216,7 +312,6 @@ export class WebXREngine {
         const distFromCam = Math.hypot(dx, dz);
         if (distFromCam > maxRadius) continue;
 
-        // Bright, high-visibility radial falloff & subtle ripple
         const radialFalloff = Math.max(0, 1.0 - distFromCam / maxRadius);
         const subtleWave =
           0.75 + 0.25 * Math.sin(distFromCam * 6.0 - timeSec * 2.0);
@@ -398,6 +493,7 @@ export class WebXREngine {
     this.draggedPointIndex = null;
     this.hoveredHandleIndex = null;
     this.detectedGroundY = null;
+    this.lastDetectedPlaneCount = 0;
 
     const baseLayer = new (window as any).XRWebGLLayer(session, this.gl);
     await session.updateRenderState({ baseLayer });
@@ -465,6 +561,7 @@ export class WebXREngine {
       this.draggedPointIndex = null;
       this.hoveredHandleIndex = null;
       this.detectedGroundY = null;
+      this.lastDetectedPlaneCount = 0;
       this.callbacks.onSessionEnded();
     });
 
@@ -512,6 +609,48 @@ export class WebXREngine {
         }
       }
 
+      // Query WebXR Plane Detection API for verified real-world physical planes
+      const detectedPlanesData: PlaneRenderData[] = [];
+      const detectedPlanes: Set<any> | undefined = frame.detectedPlanes;
+
+      if (detectedPlanes && detectedPlanes.size > 0) {
+        for (const plane of detectedPlanes) {
+          const planePose = frame.getPose(plane.planeSpace, this.refSpace);
+          if (!planePose) continue;
+
+          const polygon: ReadonlyArray<{ x: number; z: number }> =
+            plane.polygon;
+          if (!polygon || polygon.length < 3) continue;
+
+          let cached = this.planeMeshCache.get(plane);
+          if (!cached || cached.lastChangedTime !== plane.lastChangedTime) {
+            const boundary = this.buildPlaneBoundaryVertices(polygon);
+            const dots = this.generatePlaneGridDots(polygon);
+            cached = {
+              lastChangedTime: plane.lastChangedTime || 0,
+              boundaryVerts: boundary,
+              gridDots: dots,
+              dotCount: dots.length / 4,
+            };
+            this.planeMeshCache.set(plane, cached);
+          }
+
+          detectedPlanesData.push({
+            modelMatrix: planePose.transform.matrix,
+            boundaryVerts: cached.boundaryVerts,
+            gridDots: cached.gridDots,
+            dotCount: cached.dotCount,
+            orientation: plane.orientation || "horizontal",
+            semanticLabel: plane.semanticLabel,
+          });
+        }
+      }
+
+      if (detectedPlanesData.length !== this.lastDetectedPlaneCount) {
+        this.lastDetectedPlaneCount = detectedPlanesData.length;
+        this.callbacks.onPlanesDetected?.(detectedPlanesData.length);
+      }
+
       // Render WebXR scene into XRWebGLLayer framebuffer
       const pose = frame.getViewerPose(this.refSpace);
       if (pose) {
@@ -523,8 +662,11 @@ export class WebXREngine {
         const timeSec = time * 0.001;
         const camPos = pose.transform.position;
 
-        // Generate high-visibility room-scale physical surface grid dots
-        const roomDots = this.generateRoomPlaneGrid(timeSec, camPos);
+        // Generate procedural fallback dots if no planes are detected yet
+        const roomDots =
+          detectedPlanesData.length === 0
+            ? this.generateRoomPlaneGrid(timeSec, camPos)
+            : [];
 
         for (const view of pose.views) {
           const viewport = layer.getViewport(view);
@@ -533,6 +675,7 @@ export class WebXREngine {
           this.renderScene(
             view.projectionMatrix,
             view.transform.inverse.matrix,
+            detectedPlanesData,
             roomDots,
           );
         }
@@ -556,6 +699,7 @@ export class WebXREngine {
       this.draggedPointIndex = null;
       this.hoveredHandleIndex = null;
       this.detectedGroundY = null;
+      this.lastDetectedPlaneCount = 0;
     }
   }
 
@@ -566,7 +710,8 @@ export class WebXREngine {
   private renderScene(
     projectionMatrix: Float32Array,
     viewMatrix: Float32Array,
-    roomGridDots: number[],
+    detectedPlanesData: PlaneRenderData[],
+    fallbackGridDots: number[],
   ): void {
     const gl = this.gl;
     gl.enable(gl.DEPTH_TEST);
@@ -577,11 +722,92 @@ export class WebXREngine {
       1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1,
     ]);
 
-    // ==========================================
-    // 1. RENDER SCANNING LIGHT-DOT SURFACE GRID (Active ONLY while scanning for surfaces)
-    // ==========================================
-    if (roomGridDots.length > 0 && !this.reticleMatrix) {
-      // Disable depth write so particles blend crisply on top of camera without depth clipping
+    // =========================================================================
+    // 1. RENDER PHYSICAL DETECTED PLANES (WebXR Plane Detection API)
+    // =========================================================================
+    if (detectedPlanesData.length > 0) {
+      gl.depthMask(false);
+
+      // 1a. Interior Surface Matrix Grid Dots
+      gl.useProgram(this.pointCloudProgram);
+      const uProjPC = gl.getUniformLocation(
+        this.pointCloudProgram,
+        "uProjectionMatrix",
+      );
+      const uViewPC = gl.getUniformLocation(
+        this.pointCloudProgram,
+        "uViewMatrix",
+      );
+      const uModelPC = gl.getUniformLocation(
+        this.pointCloudProgram,
+        "uModelMatrix",
+      );
+      gl.uniformMatrix4fv(uProjPC, false, projectionMatrix);
+      gl.uniformMatrix4fv(uViewPC, false, viewMatrix);
+
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.pointCloudBuffer);
+      const posAttrPC = gl.getAttribLocation(
+        this.pointCloudProgram,
+        "aPosition",
+      );
+      const alphaAttrPC = gl.getAttribLocation(
+        this.pointCloudProgram,
+        "aAlpha",
+      );
+
+      gl.enableVertexAttribArray(posAttrPC);
+      gl.vertexAttribPointer(posAttrPC, 3, gl.FLOAT, false, 16, 0);
+
+      gl.enableVertexAttribArray(alphaAttrPC);
+      gl.vertexAttribPointer(alphaAttrPC, 1, gl.FLOAT, false, 16, 12);
+
+      for (const plane of detectedPlanesData) {
+        if (plane.dotCount > 0) {
+          gl.uniformMatrix4fv(uModelPC, false, plane.modelMatrix);
+          gl.bufferData(gl.ARRAY_BUFFER, plane.gridDots, gl.DYNAMIC_DRAW);
+          gl.drawArrays(gl.POINTS, 0, plane.dotCount);
+        }
+      }
+      gl.disableVertexAttribArray(alphaAttrPC);
+
+      // 1b. Plane Boundary Outlines (glowing cyan / blue boundary contours)
+      gl.useProgram(this.geometryProgram);
+      const uProjGeom = gl.getUniformLocation(
+        this.geometryProgram,
+        "uProjectionMatrix",
+      );
+      const uViewGeom = gl.getUniformLocation(
+        this.geometryProgram,
+        "uViewMatrix",
+      );
+      const uModelGeom = gl.getUniformLocation(
+        this.geometryProgram,
+        "uModelMatrix",
+      );
+      const uColorGeom = gl.getUniformLocation(this.geometryProgram, "uColor");
+      gl.uniformMatrix4fv(uProjGeom, false, projectionMatrix);
+      gl.uniformMatrix4fv(uViewGeom, false, viewMatrix);
+
+      const posAttrGeom = gl.getAttribLocation(
+        this.geometryProgram,
+        "aPosition",
+      );
+      gl.enableVertexAttribArray(posAttrGeom);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexBuffer);
+      gl.vertexAttribPointer(posAttrGeom, 3, gl.FLOAT, false, 0, 0);
+
+      for (const plane of detectedPlanesData) {
+        if (plane.boundaryVerts.length >= 9) {
+          gl.uniformMatrix4fv(uModelGeom, false, plane.modelMatrix);
+          gl.uniform4f(uColorGeom, 0.22, 0.74, 0.97, 0.65);
+          gl.bufferData(gl.ARRAY_BUFFER, plane.boundaryVerts, gl.DYNAMIC_DRAW);
+          gl.drawArrays(gl.LINE_LOOP, 0, plane.boundaryVerts.length / 3);
+        }
+      }
+
+      gl.depthMask(true);
+    } else if (fallbackGridDots.length > 0 && !this.reticleMatrix) {
+      // Fallback: Procedural Light-Dot Grid while searching for initial surfaces
       gl.depthMask(false);
       gl.useProgram(this.pointCloudProgram);
 
@@ -593,13 +819,18 @@ export class WebXREngine {
         this.pointCloudProgram,
         "uViewMatrix",
       );
+      const uModel = gl.getUniformLocation(
+        this.pointCloudProgram,
+        "uModelMatrix",
+      );
       gl.uniformMatrix4fv(uProj, false, projectionMatrix);
       gl.uniformMatrix4fv(uView, false, viewMatrix);
+      gl.uniformMatrix4fv(uModel, false, identity);
 
       gl.bindBuffer(gl.ARRAY_BUFFER, this.pointCloudBuffer);
       gl.bufferData(
         gl.ARRAY_BUFFER,
-        new Float32Array(roomGridDots),
+        new Float32Array(fallbackGridDots),
         gl.DYNAMIC_DRAW,
       );
 
@@ -612,15 +843,15 @@ export class WebXREngine {
       gl.enableVertexAttribArray(alphaAttr);
       gl.vertexAttribPointer(alphaAttr, 1, gl.FLOAT, false, 16, 12);
 
-      gl.drawArrays(gl.POINTS, 0, roomGridDots.length / 4);
+      gl.drawArrays(gl.POINTS, 0, fallbackGridDots.length / 4);
 
       gl.disableVertexAttribArray(alphaAttr);
       gl.depthMask(true);
     }
 
-    // ==========================================
-    // 2. RENDER 3D PLACEMENT RETICLE & 3D GEOMETRY
-    // ==========================================
+    // =========================================================================
+    // 2. RENDER 3D PLACEMENT RETICLE & 3D MEASUREMENT GEOMETRY
+    // =========================================================================
     gl.useProgram(this.geometryProgram);
 
     const uProj = gl.getUniformLocation(
@@ -653,7 +884,7 @@ export class WebXREngine {
         gl.uniform4f(uColor, 0.22, 0.74, 0.97, 0.95);
       }
 
-      // Elegant clean circular reticle ring ($6\text{cm}$ radius)
+      // Elegant clean circular reticle ring (6cm radius)
       const torusVerts = this.createTorusMesh(0.06, 0.0035, 28, 8);
       gl.bufferData(
         gl.ARRAY_BUFFER,
@@ -662,7 +893,7 @@ export class WebXREngine {
       );
       gl.drawArrays(gl.TRIANGLES, 0, torusVerts.length / 3);
 
-      // Clean center targeting dot ($6\text{mm}$)
+      // Clean center targeting dot (6mm)
       const dotVerts = this.createSphereMesh({ x: 0, y: 0, z: 0 }, 0.006, 8);
       gl.bufferData(
         gl.ARRAY_BUFFER,
@@ -701,10 +932,9 @@ export class WebXREngine {
       }
 
       currentDistanceValue = distance3D(this.points[0], this.reticlePosition);
-      // While taking a measurement, anchor distance badge right at the cursor/reticle in view
       measurementMidpoint = {
         x: this.reticlePosition.x,
-        y: this.reticlePosition.y + 0.07, // 7cm above targeting cursor
+        y: this.reticlePosition.y + 0.07,
         z: this.reticlePosition.z,
       };
     }
@@ -728,7 +958,6 @@ export class WebXREngine {
       }
 
       currentDistanceValue = distance3D(this.points[0], this.points[1]);
-      // After completion, anchor distance badge at the midpoint of the line
       measurementMidpoint = {
         x: (this.points[0].x + this.points[1].x) / 2,
         y: (this.points[0].y + this.points[1].y) / 2 + 0.05,
@@ -745,7 +974,7 @@ export class WebXREngine {
       const isHovered = this.hoveredHandleIndex === i;
 
       if (isDragged) {
-        gl.uniform4f(uColor, 0.13, 0.77, 0.36, 1.0); // Bright Green when dragging
+        gl.uniform4f(uColor, 0.13, 0.77, 0.36, 1.0);
         const verts = this.createSphereMesh(p, 0.024, 12);
         gl.bufferData(
           gl.ARRAY_BUFFER,
@@ -754,7 +983,7 @@ export class WebXREngine {
         );
         gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
       } else if (isHovered) {
-        gl.uniform4f(uColor, 0.98, 0.75, 0.18, 1.0); // Large Golden Pulsing Handle
+        gl.uniform4f(uColor, 0.98, 0.75, 0.18, 1.0);
         const verts = this.createSphereMesh(p, 0.022, 12);
         gl.bufferData(
           gl.ARRAY_BUFFER,
@@ -763,7 +992,7 @@ export class WebXREngine {
         );
         gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
       } else {
-        gl.uniform4f(uColor, 0.98, 0.75, 0.18, 0.9); // Normal Gold Anchor Sphere
+        gl.uniform4f(uColor, 0.98, 0.75, 0.18, 0.9);
         const verts = this.createSphereMesh(p, 0.016, 10);
         gl.bufferData(
           gl.ARRAY_BUFFER,
@@ -774,9 +1003,9 @@ export class WebXREngine {
       }
     }
 
-    // ==========================================
+    // =========================================================================
     // 3. RENDER 3D IN-AR SPATIAL BILLBOARD LABEL
-    // ==========================================
+    // =========================================================================
     if (measurementMidpoint && currentDistanceValue > 0.001) {
       const formattedText = formatDistance(currentDistanceValue, this.unit, 2);
       this.updateTextTexture(formattedText);

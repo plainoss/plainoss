@@ -322,6 +322,14 @@ export class WebXREngine {
   }
 
   /**
+   * Updates measurement unit and invalidates rendered text texture.
+   */
+  public setUnit(newUnit: DistanceUnit): void {
+    this.unit = newUnit;
+    this.lastRenderedText = "";
+  }
+
+  /**
    * Temporarily suppress XR screen taps (e.g. when tapping UI buttons like Clear or Exit).
    */
   public suppressTap(durationMs: number = 400): void {
@@ -693,10 +701,11 @@ export class WebXREngine {
       }
 
       currentDistanceValue = distance3D(this.points[0], this.reticlePosition);
+      // While taking a measurement, anchor distance badge right at the cursor/reticle in view
       measurementMidpoint = {
-        x: (this.points[0].x + this.reticlePosition.x) / 2,
-        y: (this.points[0].y + this.reticlePosition.y) / 2 + 0.04, // 4cm above line
-        z: (this.points[0].z + this.reticlePosition.z) / 2,
+        x: this.reticlePosition.x,
+        y: this.reticlePosition.y + 0.07, // 7cm above targeting cursor
+        z: this.reticlePosition.z,
       };
     }
 
@@ -719,9 +728,10 @@ export class WebXREngine {
       }
 
       currentDistanceValue = distance3D(this.points[0], this.points[1]);
+      // After completion, anchor distance badge at the midpoint of the line
       measurementMidpoint = {
         x: (this.points[0].x + this.points[1].x) / 2,
-        y: (this.points[0].y + this.points[1].y) / 2 + 0.04,
+        y: (this.points[0].y + this.points[1].y) / 2 + 0.05,
         z: (this.points[0].z + this.points[1].z) / 2,
       };
     }

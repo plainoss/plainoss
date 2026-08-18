@@ -74,6 +74,14 @@ export function App() {
       document.removeEventListener("beforexrselect", handleBeforeXRSelect);
   }, []);
 
+  const unitRef = useRef<DistanceUnit>(unit);
+  useEffect(() => {
+    unitRef.current = unit;
+    if (xrEngineRef.current) {
+      xrEngineRef.current.setUnit(unit);
+    }
+  }, [unit]);
+
   const initEngine = useCallback(
     (canvas: HTMLCanvasElement) => {
       if (xrEngineRef.current) return xrEngineRef.current;
@@ -88,7 +96,10 @@ export function App() {
             currentPts[1]
           ) {
             const d = distance3D(currentPts[0], currentPts[1]);
-            showToast(`Distance: ${formatDistance(d, unit, 2)}`, "success");
+            showToast(
+              `Distance: ${formatDistance(d, unitRef.current, 2)}`,
+              "success",
+            );
           }
         },
         onScanningStateChange: (scanning) => {
@@ -111,7 +122,7 @@ export function App() {
           if (currentPts.length >= 2 && currentPts[0] && currentPts[1]) {
             const d = distance3D(currentPts[0], currentPts[1]);
             showToast(
-              `Updated Distance: ${formatDistance(d, unit, 2)}`,
+              `Updated Distance: ${formatDistance(d, unitRef.current, 2)}`,
               "success",
             );
           }
@@ -130,11 +141,11 @@ export function App() {
           setHoveredHandleIndex(null);
         },
       });
-      engine.unit = unit;
+      engine.setUnit(unitRef.current);
       xrEngineRef.current = engine;
       return engine;
     },
-    [unit, showToast],
+    [showToast],
   );
 
   // Start AR Session
@@ -151,7 +162,7 @@ export function App() {
     }
   }, [initEngine]);
 
-  // Initialize WebXR Engine & check support + attempt auto-start
+  // Initialize WebXR Engine & check support on mount
   useEffect(() => {
     WebXREngine.isSupported().then((supported) => {
       setIsARSupported(supported);
@@ -161,13 +172,6 @@ export function App() {
       }
     });
   }, [initEngine, handleStartAR]);
-
-  // Sync unit changes to engine
-  useEffect(() => {
-    if (xrEngineRef.current) {
-      xrEngineRef.current.unit = unit;
-    }
-  }, [unit]);
 
   // Clear / Reset points without placing a new point
   const handleReset = useCallback(

@@ -31,20 +31,31 @@ export const Header: React.FC<HeaderProps> = ({
         <div>
           <h1 className="brand-title">AR Ruler</h1>
           <span className="brand-subtitle">
-            PlainOSS 3D Spatial Measurement
+            PlainOSS WebXR Spatial Measurement
           </span>
         </div>
       </div>
 
       <nav className="header-actions" aria-label="Main Navigation">
-        {isARSupported && (
+        {isARSupported ? (
           <button
             className={`btn btn-ar ${isARActive ? "btn-ar-active" : ""}`}
             onClick={onToggleAR}
-            title={isARActive ? "Exit WebXR AR" : "Enter WebXR AR Camera Mode"}
+            title={
+              isARActive ? "Exit WebXR AR" : "Enter WebXR Immersive AR Mode"
+            }
           >
             <span aria-hidden="true">{isARActive ? "⏹" : "📷"}</span>
             <span>{isARActive ? "Stop AR" : "Start AR"}</span>
+          </button>
+        ) : (
+          <button
+            className="btn btn-secondary btn-ar-unsupported"
+            disabled
+            title="WebXR Immersive AR is not supported on this browser/device. Requires Chrome on ARCore Android, Quest Browser, or WebXR headset."
+          >
+            <span aria-hidden="true">⚠️</span>
+            <span>AR Not Supported</span>
           </button>
         )}
 

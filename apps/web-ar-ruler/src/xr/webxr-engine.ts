@@ -4,7 +4,7 @@
  * and an interactive 3D WebGL orbit canvas for desktop/non-XR devices.
  */
 
-import { Point3D } from '@plainoss/core';
+import { Point3D } from "@plainoss/core";
 
 export interface XREngineCallbacks {
   onHitPoseChange: (pose: Point3D | null) => void;
@@ -34,11 +34,19 @@ export class WebXREngine {
     this.callbacks = callbacks;
 
     const gl =
-      canvas.getContext('webgl2', { xrCompatible: true, alpha: true, antialias: true }) ||
-      canvas.getContext('webgl', { xrCompatible: true, alpha: true, antialias: true });
+      canvas.getContext("webgl2", {
+        xrCompatible: true,
+        alpha: true,
+        antialias: true,
+      }) ||
+      canvas.getContext("webgl", {
+        xrCompatible: true,
+        alpha: true,
+        antialias: true,
+      });
 
     if (!gl) {
-      throw new Error('WebGL not supported');
+      throw new Error("WebGL not supported");
     }
     this.gl = gl as WebGL2RenderingContext;
     this.initShaders();
@@ -89,11 +97,11 @@ export class WebXREngine {
   }
 
   public static async isSupported(): Promise<boolean> {
-    if (typeof window === 'undefined' || !('xr' in navigator)) {
+    if (typeof window === "undefined" || !("xr" in navigator)) {
       return false;
     }
     try {
-      return await (navigator as any).xr.isSessionSupported('immersive-ar');
+      return await (navigator as any).xr.isSessionSupported("immersive-ar");
     } catch {
       return false;
     }
@@ -106,46 +114,48 @@ export class WebXREngine {
 
     const xr = (navigator as any).xr;
     if (!xr) {
-      throw new Error('WebXR API not available');
+      throw new Error("WebXR API not available");
     }
 
     // Make WebGL context XR compatible
-    if ('makeXRCompatible' in this.gl) {
+    if ("makeXRCompatible" in this.gl) {
       await (this.gl as any).makeXRCompatible();
     }
 
     const sessionInit: any = {
-      requiredFeatures: ['hit-test'],
-      optionalFeatures: ['dom-overlay', 'local-floor'],
+      requiredFeatures: ["hit-test"],
+      optionalFeatures: ["dom-overlay", "local-floor"],
     };
 
     if (overlayElement) {
-      sessionInit.optionalFeatures.push('dom-overlay');
+      sessionInit.optionalFeatures.push("dom-overlay");
       sessionInit.domOverlay = { root: overlayElement };
     }
 
-    const session = await xr.requestSession('immersive-ar', sessionInit);
+    const session = await xr.requestSession("immersive-ar", sessionInit);
     this.session = session;
     this.isXRActive = true;
 
     const baseLayer = new (window as any).XRWebGLLayer(session, this.gl);
     await session.updateRenderState({ baseLayer });
 
-    const refSpace = await session.requestReferenceSpace('local');
-    const viewerSpace = await session.requestReferenceSpace('viewer');
-    const hitTestSource = await session.requestHitTestSource({ space: viewerSpace });
+    const refSpace = await session.requestReferenceSpace("local");
+    const viewerSpace = await session.requestReferenceSpace("viewer");
+    const hitTestSource = await session.requestHitTestSource({
+      space: viewerSpace,
+    });
 
     this.refSpace = refSpace;
     this.hitTestSource = hitTestSource;
 
     // Listen for select (tap on screen) to drop points
-    session.addEventListener('select', () => {
+    session.addEventListener("select", () => {
       if (this.reticlePosition) {
         this.callbacks.onPointPlaced({ ...this.reticlePosition });
       }
     });
 
-    session.addEventListener('end', () => {
+    session.addEventListener("end", () => {
       this.isXRActive = false;
       this.session = null;
       this.hitTestSource = null;
@@ -187,7 +197,10 @@ export class WebXREngine {
           const viewport = layer.getViewport(view);
           gl.viewport(viewport.x, viewport.y, viewport.width, viewport.height);
 
-          this.renderScene(view.projectionMatrix, view.transform.inverse.matrix);
+          this.renderScene(
+            view.projectionMatrix,
+            view.transform.inverse.matrix,
+          );
         }
       }
 
@@ -213,31 +226,31 @@ export class WebXREngine {
     return this.isXRActive;
   }
 
-  private renderScene(projectionMatrix: Float32Array, viewMatrix: Float32Array): void {
+  private renderScene(
+    projectionMatrix: Float32Array,
+    viewMatrix: Float32Array,
+  ): void {
     const gl = this.gl;
     gl.useProgram(this.colorProgram);
     gl.enable(gl.DEPTH_TEST);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
-    const uProj = gl.getUniformLocation(this.colorProgram, 'uProjectionMatrix');
-    const uView = gl.getUniformLocation(this.colorProgram, 'uViewMatrix');
-    const uModel = gl.getUniformLocation(this.colorProgram, 'uModelMatrix');
-    const uColor = gl.getUniformLocation(this.colorProgram, 'uColor');
-    const uIsPoint = gl.getUniformLocation(this.colorProgram, 'uIsPoint');
+    const uProj = gl.getUniformLocation(this.colorProgram, "uProjectionMatrix");
+    const uView = gl.getUniformLocation(this.colorProgram, "uViewMatrix");
+    const uModel = gl.getUniformLocation(this.colorProgram, "uModelMatrix");
+    const uColor = gl.getUniformLocation(this.colorProgram, "uColor");
+    const uIsPoint = gl.getUniformLocation(this.colorProgram, "uIsPoint");
 
     gl.uniformMatrix4fv(uProj, false, projectionMatrix);
     gl.uniformMatrix4fv(uView, false, viewMatrix);
 
     const identity = new Float32Array([
-      1, 0, 0, 0,
-      0, 1, 0, 0,
-      0, 0, 1, 0,
-      0, 0, 0, 1,
+      1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1,
     ]);
     gl.uniformMatrix4fv(uModel, false, identity);
 
-    const posAttr = gl.getAttribLocation(this.colorProgram, 'aPosition');
+    const posAttr = gl.getAttribLocation(this.colorProgram, "aPosition");
     gl.enableVertexAttribArray(posAttr);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
     gl.vertexAttribPointer(posAttr, 3, gl.FLOAT, false, 0, 0);
@@ -256,7 +269,11 @@ export class WebXREngine {
         const theta = (i / segments) * Math.PI * 2;
         ringVerts.push(Math.cos(theta) * radius, 0, Math.sin(theta) * radius);
       }
-      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(ringVerts), gl.DYNAMIC_DRAW);
+      gl.bufferData(
+        gl.ARRAY_BUFFER,
+        new Float32Array(ringVerts),
+        gl.DYNAMIC_DRAW,
+      );
       gl.drawArrays(gl.LINE_LOOP, 0, segments + 1);
 
       gl.uniformMatrix4fv(uModel, false, identity);
@@ -271,7 +288,11 @@ export class WebXREngine {
       for (const p of this.points) {
         lineVerts.push(p.x, p.y, p.z);
       }
-      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(lineVerts), gl.DYNAMIC_DRAW);
+      gl.bufferData(
+        gl.ARRAY_BUFFER,
+        new Float32Array(lineVerts),
+        gl.DYNAMIC_DRAW,
+      );
       gl.lineWidth(4.0);
       gl.drawArrays(gl.LINE_STRIP, 0, this.points.length);
     }
@@ -285,7 +306,11 @@ export class WebXREngine {
       for (const p of this.points) {
         pointVerts.push(p.x, p.y, p.z);
       }
-      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(pointVerts), gl.DYNAMIC_DRAW);
+      gl.bufferData(
+        gl.ARRAY_BUFFER,
+        new Float32Array(pointVerts),
+        gl.DYNAMIC_DRAW,
+      );
       gl.drawArrays(gl.POINTS, 0, this.points.length);
     }
   }

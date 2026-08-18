@@ -1,6 +1,6 @@
 /**
  * Pure WebGL WebXR AR Ruler Engine
- * Visualizes room-scale physical surface plane grid matrix across entire detected floors/surfaces,
+ * Visualizes high-visibility room-scale physical surface plane grid matrix across detected floors/surfaces,
  * a clean minimalist placement pointer when surface is detected,
  * and 3D volumetric laser measurement lines with interactive handles.
  */
@@ -152,7 +152,7 @@ export class WebXREngine {
     ]);
     gl.bufferData(gl.ARRAY_BUFFER, quadVerts, gl.STATIC_DRAW);
 
-    // 3. 3D Light-Dot Surface Grid Matrix Shader (Room-Scale Physical Surface Matrix)
+    // 3. High-Visibility 3D Light-Dot Surface Grid Shader
     const vsPointCloud = `
       attribute vec3 aPosition;
       attribute float aAlpha;
@@ -163,8 +163,8 @@ export class WebXREngine {
         vAlpha = aAlpha;
         vec4 viewPos = uViewMatrix * vec4(aPosition, 1.0);
         gl_Position = uProjectionMatrix * viewPos;
-        float dist = max(0.4, -viewPos.z);
-        gl_PointSize = clamp(95.0 / dist, 3.5, 15.0);
+        float dist = max(0.3, -viewPos.z);
+        gl_PointSize = clamp(220.0 / dist, 10.0, 36.0);
       }
     `;
 
@@ -176,9 +176,10 @@ export class WebXREngine {
         float dist = length(coord);
         if (dist > 0.5) discard;
         float glow = smoothstep(0.5, 0.0, dist);
-        float core = smoothstep(0.18, 0.0, dist);
-        float alpha = (glow * 0.55 + core * 0.45) * vAlpha;
-        gl_FragColor = vec4(0.82, 0.94, 1.0, alpha);
+        float core = smoothstep(0.22, 0.0, dist);
+        float alpha = (glow * 0.5 + core * 0.5) * vAlpha;
+        vec3 col = mix(vec3(0.22, 0.74, 0.97), vec3(1.0, 1.0, 1.0), core);
+        gl_FragColor = vec4(col, alpha);
       }
     `;
 
@@ -187,22 +188,20 @@ export class WebXREngine {
   }
 
   /**
-   * Generates a room-scale planar grid of light dots across the entire detected physical floor/surface plane.
-   * Dots are anchored to fixed world coordinates so they stay locked onto the real floor.
+   * Generates a high-visibility room-scale planar grid of light dots across the entire detected physical floor.
    */
-  private generateRoomPlaneGrid(
-    timeSec: number,
-    camPos: Point3D,
-    camForward: Point3D,
-  ): number[] {
+  private generateRoomPlaneGrid(timeSec: number, camPos: Point3D): number[] {
     const groundY =
-      this.detectedGroundY !== null ? this.detectedGroundY : camPos.y - 0.6;
+      this.reticlePosition !== null
+        ? this.reticlePosition.y
+        : this.detectedGroundY !== null
+          ? this.detectedGroundY
+          : camPos.y - 0.65;
+
     const dots: number[] = [];
+    const spacing = 0.15; // 15cm grid pitch
+    const maxRadius = 3.2; // 3.2m radius
 
-    const spacing = 0.12; // 12cm grid pitch
-    const maxRadius = 3.6; // 3.6m radius (covers ~7m x 7m room floor)
-
-    // Center the world sampling around camera position snapped to grid
     const snapX = Math.round(camPos.x / spacing) * spacing;
     const snapZ = Math.round(camPos.z / spacing) * spacing;
     const steps = Math.floor(maxRadius / spacing);
@@ -217,17 +216,13 @@ export class WebXREngine {
         const distFromCam = Math.hypot(dx, dz);
         if (distFromCam > maxRadius) continue;
 
-        // Check if point is in front of camera hemisphere
-        const dotForward = dx * camForward.x + dz * camForward.z;
-        if (dotForward < -0.4) continue; // Behind camera
-
-        // Subtle, delicate room-scale surface visibility (max alpha 0.24)
+        // Bright, high-visibility radial falloff & subtle ripple
         const radialFalloff = Math.max(0, 1.0 - distFromCam / maxRadius);
         const subtleWave =
-          0.75 + 0.25 * Math.sin(distFromCam * 8.0 - timeSec * 2.0);
-        const alpha = radialFalloff * radialFalloff * subtleWave * 0.24;
+          0.75 + 0.25 * Math.sin(distFromCam * 6.0 - timeSec * 2.0);
+        const alpha = Math.min(1.0, radialFalloff * subtleWave * 0.85);
 
-        if (alpha < 0.012) continue;
+        if (alpha < 0.04) continue;
 
         dots.push(wx, groundY, wz, alpha);
       }
@@ -519,15 +514,9 @@ export class WebXREngine {
 
         const timeSec = time * 0.001;
         const camPos = pose.transform.position;
-        const camMat = pose.transform.matrix;
-        const camForward = { x: -camMat[8], y: -camMat[9], z: -camMat[10] };
 
-        // Generate room-scale physical surface grid dots
-        const roomDots = this.generateRoomPlaneGrid(
-          timeSec,
-          camPos,
-          camForward,
-        );
+        // Generate high-visibility room-scale physical surface grid dots
+        const roomDots = this.generateRoomPlaneGrid(timeSec, camPos);
 
         for (const view of pose.views) {
           const viewport = layer.getViewport(view);
@@ -581,9 +570,11 @@ export class WebXREngine {
     ]);
 
     // ==========================================
-    // 1. RENDER ROOM-SCALE PHYSICAL SURFACE PLANE GRID
+    // 1. RENDER HIGH-VISIBILITY ROOM-SCALE PHYSICAL SURFACE PLANE GRID
     // ==========================================
     if (roomGridDots.length > 0) {
+      // Disable depth write so particles blend crisply on top of camera without depth clipping
+      gl.depthMask(false);
       gl.useProgram(this.pointCloudProgram);
 
       const uProj = gl.getUniformLocation(
@@ -616,6 +607,7 @@ export class WebXREngine {
       gl.drawArrays(gl.POINTS, 0, roomGridDots.length / 4);
 
       gl.disableVertexAttribArray(alphaAttr);
+      gl.depthMask(true);
     }
 
     // ==========================================

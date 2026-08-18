@@ -40,6 +40,21 @@ export class WebXREngine {
   private quadBuffer!: WebGLBuffer;
   private pointCloudBuffer!: WebGLBuffer;
 
+  // Static Mesh Buffers & Vertex Counts (Pre-uploaded to GPU to avoid per-frame allocations)
+  private torusBuffer!: WebGLBuffer;
+  private torusVertexCount: number = 0;
+  private dotBuffer!: WebGLBuffer;
+  private dotVertexCount: number = 0;
+  private sphereDraggedBuffer!: WebGLBuffer;
+  private sphereDraggedVertexCount: number = 0;
+  private sphereHoveredBuffer!: WebGLBuffer;
+  private sphereHoveredVertexCount: number = 0;
+  private sphereNormalBuffer!: WebGLBuffer;
+  private sphereNormalVertexCount: number = 0;
+  private tempMatrix = new Float32Array([
+    1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1,
+  ]);
+
   // Text Texture for 3D In-AR Measurement Label
   private textCanvas: HTMLCanvasElement;
   private textCtx: CanvasRenderingContext2D;
@@ -185,6 +200,44 @@ export class WebXREngine {
 
     this.pointCloudProgram = this.createProgram(vsPointCloud, fsPointCloud);
     this.pointCloudBuffer = gl.createBuffer()!;
+
+    // Pre-calculate and upload static mesh VBO buffers for reticles and handles
+    const createStaticBuffer = (
+      verts: number[],
+    ): { buffer: WebGLBuffer; count: number } => {
+      const buf = gl.createBuffer()!;
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(verts), gl.STATIC_DRAW);
+      return { buffer: buf, count: verts.length / 3 };
+    };
+
+    const torus = createStaticBuffer(this.createTorusMesh(0.06, 0.0035, 28, 8));
+    this.torusBuffer = torus.buffer;
+    this.torusVertexCount = torus.count;
+
+    const dot = createStaticBuffer(
+      this.createSphereMesh({ x: 0, y: 0, z: 0 }, 0.006, 8),
+    );
+    this.dotBuffer = dot.buffer;
+    this.dotVertexCount = dot.count;
+
+    const sDragged = createStaticBuffer(
+      this.createSphereMesh({ x: 0, y: 0, z: 0 }, 0.024, 12),
+    );
+    this.sphereDraggedBuffer = sDragged.buffer;
+    this.sphereDraggedVertexCount = sDragged.count;
+
+    const sHovered = createStaticBuffer(
+      this.createSphereMesh({ x: 0, y: 0, z: 0 }, 0.022, 12),
+    );
+    this.sphereHoveredBuffer = sHovered.buffer;
+    this.sphereHoveredVertexCount = sHovered.count;
+
+    const sNormal = createStaticBuffer(
+      this.createSphereMesh({ x: 0, y: 0, z: 0 }, 0.016, 10),
+    );
+    this.sphereNormalBuffer = sNormal.buffer;
+    this.sphereNormalVertexCount = sNormal.count;
   }
 
   /**
@@ -653,23 +706,15 @@ export class WebXREngine {
         gl.uniform4f(uColor, 0.22, 0.74, 0.97, 0.95);
       }
 
-      // Elegant clean circular reticle ring ($6\text{cm}$ radius)
-      const torusVerts = this.createTorusMesh(0.06, 0.0035, 28, 8);
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        new Float32Array(torusVerts),
-        gl.DYNAMIC_DRAW,
-      );
-      gl.drawArrays(gl.TRIANGLES, 0, torusVerts.length / 3);
+      // Elegant clean circular reticle ring ($6\text{cm}$ radius) - using pre-allocated VBO
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.torusBuffer);
+      gl.vertexAttribPointer(posAttr, 3, gl.FLOAT, false, 0, 0);
+      gl.drawArrays(gl.TRIANGLES, 0, this.torusVertexCount);
 
-      // Clean center targeting dot ($6\text{mm}$)
-      const dotVerts = this.createSphereMesh({ x: 0, y: 0, z: 0 }, 0.006, 8);
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        new Float32Array(dotVerts),
-        gl.DYNAMIC_DRAW,
-      );
-      gl.drawArrays(gl.TRIANGLES, 0, dotVerts.length / 3);
+      // Clean center targeting dot ($6\text{mm}$) - using pre-allocated VBO
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.dotBuffer);
+      gl.vertexAttribPointer(posAttr, 3, gl.FLOAT, false, 0, 0);
+      gl.drawArrays(gl.TRIANGLES, 0, this.dotVertexCount);
 
       gl.uniformMatrix4fv(uModel, false, identity);
     }
@@ -692,11 +737,13 @@ export class WebXREngine {
         0.006,
       );
       if (tubeVerts.length > 0) {
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexBuffer);
         gl.bufferData(
           gl.ARRAY_BUFFER,
           new Float32Array(tubeVerts),
           gl.DYNAMIC_DRAW,
         );
+        gl.vertexAttribPointer(posAttr, 3, gl.FLOAT, false, 0, 0);
         gl.drawArrays(gl.TRIANGLES, 0, tubeVerts.length / 3);
       }
 
@@ -719,11 +766,13 @@ export class WebXREngine {
         0.009,
       );
       if (tubeVerts.length > 0) {
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexBuffer);
         gl.bufferData(
           gl.ARRAY_BUFFER,
           new Float32Array(tubeVerts),
           gl.DYNAMIC_DRAW,
         );
+        gl.vertexAttribPointer(posAttr, 3, gl.FLOAT, false, 0, 0);
         gl.drawArrays(gl.TRIANGLES, 0, tubeVerts.length / 3);
       }
 
@@ -736,7 +785,7 @@ export class WebXREngine {
       };
     }
 
-    // 2d. Render 3D Handles / Anchor Spheres
+    // 2d. Render 3D Handles / Anchor Spheres - using pre-allocated VBOs & model translation matrix
     for (let i = 0; i < this.points.length; i++) {
       const p = this.points[i];
       if (!p) continue;
@@ -744,34 +793,30 @@ export class WebXREngine {
       const isDragged = this.draggedPointIndex === i;
       const isHovered = this.hoveredHandleIndex === i;
 
+      this.tempMatrix[12] = p.x;
+      this.tempMatrix[13] = p.y;
+      this.tempMatrix[14] = p.z;
+      gl.uniformMatrix4fv(uModel, false, this.tempMatrix);
+
       if (isDragged) {
         gl.uniform4f(uColor, 0.13, 0.77, 0.36, 1.0); // Bright Green when dragging
-        const verts = this.createSphereMesh(p, 0.024, 12);
-        gl.bufferData(
-          gl.ARRAY_BUFFER,
-          new Float32Array(verts),
-          gl.DYNAMIC_DRAW,
-        );
-        gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.sphereDraggedBuffer);
+        gl.vertexAttribPointer(posAttr, 3, gl.FLOAT, false, 0, 0);
+        gl.drawArrays(gl.TRIANGLES, 0, this.sphereDraggedVertexCount);
       } else if (isHovered) {
         gl.uniform4f(uColor, 0.98, 0.75, 0.18, 1.0); // Large Golden Pulsing Handle
-        const verts = this.createSphereMesh(p, 0.022, 12);
-        gl.bufferData(
-          gl.ARRAY_BUFFER,
-          new Float32Array(verts),
-          gl.DYNAMIC_DRAW,
-        );
-        gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.sphereHoveredBuffer);
+        gl.vertexAttribPointer(posAttr, 3, gl.FLOAT, false, 0, 0);
+        gl.drawArrays(gl.TRIANGLES, 0, this.sphereHoveredVertexCount);
       } else {
         gl.uniform4f(uColor, 0.98, 0.75, 0.18, 0.9); // Normal Gold Anchor Sphere
-        const verts = this.createSphereMesh(p, 0.016, 10);
-        gl.bufferData(
-          gl.ARRAY_BUFFER,
-          new Float32Array(verts),
-          gl.DYNAMIC_DRAW,
-        );
-        gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.sphereNormalBuffer);
+        gl.vertexAttribPointer(posAttr, 3, gl.FLOAT, false, 0, 0);
+        gl.drawArrays(gl.TRIANGLES, 0, this.sphereNormalVertexCount);
       }
+    }
+    if (this.points.length > 0) {
+      gl.uniformMatrix4fv(uModel, false, identity);
     }
 
     // ==========================================

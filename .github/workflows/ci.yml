@@ -105,12 +105,13 @@ jobs:
           DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${TAG}/${ASSET_NAME}"
           QR_IMAGE_URL="https://github.com/${REPO}/releases/download/${TAG}/${QR_ASSET_NAME}"
 
-          # 1. Generate QR Code completely open-source (zero proprietary third-party APIs)
-          pnpm dlx qrcode -w 300 -o qr.png "$DOWNLOAD_URL"
+          # 1. Prepare named files for direct download
+          cp "${APK_PATH}" "${ASSET_NAME}"
+          pnpm dlx qrcode -w 300 -o "${QR_ASSET_NAME}" "$DOWNLOAD_URL"
 
           # 2. Create rolling release tag if not existing, then upload raw uncompressed APK & QR image
           gh release view "$TAG" --repo "$REPO" || gh release create "$TAG" --title "PR APK Previews" --notes "Automated rolling APK builds for active pull requests" --prerelease --repo "$REPO"
-          gh release upload "$TAG" "${APK_PATH}#${ASSET_NAME}" "qr.png#${QR_ASSET_NAME}" --clobber --repo "$REPO"
+          gh release upload "$TAG" "${ASSET_NAME}" "${QR_ASSET_NAME}" --clobber --repo "$REPO"
 
           SHORT_SHA="${SHA:0:7}"
 

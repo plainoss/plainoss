@@ -40,45 +40,69 @@ export function App() {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  // Initialize WebXR Engine & check support
+  const initEngine = useCallback(
+    (canvas: HTMLCanvasElement) => {
+      if (xrEngineRef.current) return xrEngineRef.current;
+      const engine = new WebXREngine(canvas, {
+        onPointPlaced: (_p, currentPts) => {
+          setPoints(currentPts);
+          if (currentPts.length === 1) {
+            showToast("Point 1 placed. Aim at Point 2 & tap", "info");
+          } else if (
+            currentPts.length === 2 &&
+            currentPts[0] &&
+            currentPts[1]
+          ) {
+            const d = distance3D(currentPts[0], currentPts[1]);
+            showToast(`Distance: ${formatDistance(d, unit, 2)}`, "success");
+          }
+        },
+        onScanningStateChange: (scanning) => {
+          setIsScanning(scanning);
+        },
+        onSessionStarted: () => {
+          setIsARActive(true);
+          setIsScanning(true);
+          setPoints([]);
+        },
+        onSessionEnded: () => {
+          setIsARActive(false);
+          setIsScanning(true);
+        },
+      });
+      engine.unit = unit;
+      xrEngineRef.current = engine;
+      return engine;
+    },
+    [unit, showToast],
+  );
+
+  // Start AR Session
+  const handleStartAR = useCallback(async () => {
+    try {
+      if (!xrCanvasRef.current) return;
+      const engine = initEngine(xrCanvasRef.current);
+      const rootOverlay = document.getElementById("root") || document.body;
+      await engine.startAR(rootOverlay as HTMLElement);
+    } catch (err: any) {
+      // If browser blocked due to user gesture requirement, we show the 1-tap screen silently
+      if (err.name !== "SecurityError") {
+        console.warn("AR start error:", err);
+      }
+    }
+  }, [initEngine]);
+
+  // Initialize WebXR Engine & check support + attempt auto-start
   useEffect(() => {
     WebXREngine.isSupported().then((supported) => {
       setIsARSupported(supported);
       if (supported && xrCanvasRef.current) {
         initEngine(xrCanvasRef.current);
+        // Attempt immediate auto-start (succeeds if user activated or browser allows)
+        handleStartAR();
       }
     });
-  }, []);
-
-  const initEngine = (canvas: HTMLCanvasElement) => {
-    if (xrEngineRef.current) return xrEngineRef.current;
-    const engine = new WebXREngine(canvas, {
-      onPointPlaced: (_p, currentPts) => {
-        setPoints(currentPts);
-        if (currentPts.length === 1) {
-          showToast("Point 1 placed. Aim at Point 2 & tap", "info");
-        } else if (currentPts.length === 2 && currentPts[0] && currentPts[1]) {
-          const d = distance3D(currentPts[0], currentPts[1]);
-          showToast(`Distance: ${formatDistance(d, unit, 2)}`, "success");
-        }
-      },
-      onScanningStateChange: (scanning) => {
-        setIsScanning(scanning);
-      },
-      onSessionStarted: () => {
-        setIsARActive(true);
-        setIsScanning(true);
-        setPoints([]);
-      },
-      onSessionEnded: () => {
-        setIsARActive(false);
-        setIsScanning(true);
-      },
-    });
-    engine.unit = unit;
-    xrEngineRef.current = engine;
-    return engine;
-  };
+  }, [initEngine, handleStartAR]);
 
   // Sync unit changes to engine
   useEffect(() => {
@@ -86,19 +110,6 @@ export function App() {
       xrEngineRef.current.unit = unit;
     }
   }, [unit]);
-
-  // Start AR Session
-  const handleStartAR = async () => {
-    try {
-      if (!xrCanvasRef.current) return;
-      const engine = initEngine(xrCanvasRef.current);
-      const rootOverlay = document.getElementById("root") || document.body;
-      await engine.startAR(rootOverlay as HTMLElement);
-    } catch (err: any) {
-      console.error("AR start failed:", err);
-      showToast(err.message || "Could not start AR session", "warning");
-    }
-  };
 
   // Clear / Reset points
   const handleReset = () => {
@@ -129,7 +140,23 @@ export function App() {
         style={{ display: isARSupported !== false ? "block" : "none" }}
       />
 
-      {/* 2. WebXR Unsupported Screen */}
+      {/* 2. Fullscreen 1-Tap Trigger (Tap anywhere to start AR) */}
+      {isARSupported && !isARActive && (
+        <div
+          className="fullscreen-tap-launcher"
+          onClick={handleStartAR}
+          role="button"
+          tabIndex={0}
+        >
+          <div className="tap-launcher-content">
+            <div className="pulsing-ar-badge">📷</div>
+            <h2>AR Ruler</h2>
+            <p>Tap anywhere on screen to begin</p>
+          </div>
+        </div>
+      )}
+
+      {/* 3. WebXR Unsupported Screen */}
       {isARSupported === false && (
         <div className="unsupported-screen">
           <div className="unsupported-card">
@@ -149,66 +176,57 @@ export function App() {
         </div>
       )}
 
-      {/* 3. Minimal In-AR Control Overlay */}
-      {isARSupported !== false && (
+      {/* 4. Minimal In-AR Control Overlay */}
+      {isARSupported && isARActive && (
         <div className="ar-minimal-overlay">
           {/* Top Instruction Banner (safe area padding to avoid camera hole) */}
           <div className="ar-top-banner">
-            {!isARActive ? (
-              <button className="btn-start-ar-hero" onClick={handleStartAR}>
-                <span className="btn-icon">📷</span>
-                <span>Start AR Ruler</span>
-              </button>
-            ) : (
-              <div className={`ar-status-pill ${isScanning ? "scanning" : ""}`}>
-                {isScanning ? (
-                  <>
-                    <span className="pulsing-scan-dot" aria-hidden="true" />
-                    <span>📱 Move phone slowly to detect surface...</span>
-                  </>
-                ) : points.length === 0 ? (
-                  "🎯 Surface detected! Tap to set Point 1"
-                ) : points.length === 1 ? (
-                  "📏 Move to endpoint & tap for Point 2"
-                ) : (
-                  "✅ Measurement locked (Tap to reset)"
-                )}
-              </div>
-            )}
+            <div className={`ar-status-pill ${isScanning ? "scanning" : ""}`}>
+              {isScanning ? (
+                <>
+                  <span className="pulsing-scan-dot" aria-hidden="true" />
+                  <span>📱 Move phone slowly to detect surface...</span>
+                </>
+              ) : points.length === 0 ? (
+                "🎯 Surface detected! Tap to set Point 1"
+              ) : points.length === 1 ? (
+                "📏 Move to endpoint & tap for Point 2"
+              ) : (
+                "✅ Measurement locked (Tap to reset)"
+              )}
+            </div>
           </div>
 
           {/* Bottom Minimal Controls */}
-          {isARActive && (
-            <div className="ar-bottom-controls">
-              <button
-                className="btn-ar-action"
-                onClick={handleReset}
-                title="Clear Measurement"
-              >
-                🔄 Clear
-              </button>
+          <div className="ar-bottom-controls">
+            <button
+              className="btn-ar-action"
+              onClick={handleReset}
+              title="Clear Measurement"
+            >
+              🔄 Clear
+            </button>
 
-              <div className="ar-unit-pill-group">
-                {(["m", "cm", "in", "ft"] as DistanceUnit[]).map((u) => (
-                  <button
-                    key={u}
-                    className={`btn-unit-pill ${unit === u ? "active" : ""}`}
-                    onClick={() => setUnit(u)}
-                  >
-                    {u}
-                  </button>
-                ))}
-              </div>
-
-              <button
-                className="btn-ar-action btn-ar-exit"
-                onClick={() => xrEngineRef.current?.endAR()}
-                title="Exit AR Mode"
-              >
-                ⏹ Exit
-              </button>
+            <div className="ar-unit-pill-group">
+              {(["m", "cm", "in", "ft"] as DistanceUnit[]).map((u) => (
+                <button
+                  key={u}
+                  className={`btn-unit-pill ${unit === u ? "active" : ""}`}
+                  onClick={() => setUnit(u)}
+                >
+                  {u}
+                </button>
+              ))}
             </div>
-          )}
+
+            <button
+              className="btn-ar-action btn-ar-exit"
+              onClick={() => xrEngineRef.current?.endAR()}
+              title="Exit AR Mode"
+            >
+              ⏹ Exit
+            </button>
+          </div>
         </div>
       )}
 

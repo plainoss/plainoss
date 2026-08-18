@@ -101,28 +101,32 @@ jobs:
           APK_PATH="apps/mobile-ar-ruler/android/app/build/outputs/apk/release/app-release.apk"
           TAG="pr-apk-previews"
           ASSET_NAME="mobile-ar-ruler-pr-${PR_NUMBER}.apk"
-
-          # Create rolling release tag if not existing, then upload raw uncompressed APK
-          gh release view "$TAG" --repo "$REPO" || gh release create "$TAG" --title "PR APK Previews" --notes "Automated rolling APK builds for active pull requests" --prerelease --repo "$REPO"
-          gh release upload "$TAG" "${APK_PATH}#${ASSET_NAME}" --clobber --repo "$REPO"
-
+          QR_ASSET_NAME="mobile-ar-ruler-pr-${PR_NUMBER}-qr.png"
           DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${TAG}/${ASSET_NAME}"
-          QR_URL="https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${DOWNLOAD_URL}"
+          QR_IMAGE_URL="https://github.com/${REPO}/releases/download/${TAG}/${QR_ASSET_NAME}"
+
+          # 1. Generate QR Code completely open-source (zero proprietary third-party APIs)
+          pnpm dlx qrcode -w 300 -o qr.png "$DOWNLOAD_URL"
+
+          # 2. Create rolling release tag if not existing, then upload raw uncompressed APK & QR image
+          gh release view "$TAG" --repo "$REPO" || gh release create "$TAG" --title "PR APK Previews" --notes "Automated rolling APK builds for active pull requests" --prerelease --repo "$REPO"
+          gh release upload "$TAG" "${APK_PATH}#${ASSET_NAME}" "qr.png#${QR_ASSET_NAME}" --clobber --repo "$REPO"
+
           SHORT_SHA="${SHA:0:7}"
 
           COMMENT_BODY=$(cat <<EOF
           <!-- mobile-ar-ruler-apk-preview -->
           ## 📱 Mobile AR Ruler Preview APK
 
-          | Direct Download (Uncompressed APK) | QR Code (Scan to Install) |
+          | Direct Download (Uncompressed APK) | QR Code (Scan with Phone) |
           | :--- | :---: |
-          | ⬇️ [**Download \`${ASSET_NAME}\`**](${DOWNLOAD_URL})<br><br> • **Commit**: \`${SHORT_SHA}\`<br> • **Type**: Standalone Release Build (No dev server needed)<br> • **Updated**: $(date -u +"%Y-%m-%d %H:%M UTC") | ![QR Code](${QR_URL}) |
+          | ⬇️ [**Download \`${ASSET_NAME}\`**](${DOWNLOAD_URL})<br><br> • **Commit**: \`${SHORT_SHA}\`<br> • **Type**: Standalone Release Build (No dev server needed)<br> • **Updated**: $(date -u +"%Y-%m-%d %H:%M UTC") | <img src="${QR_IMAGE_URL}" width="160" height="160" alt="Scan to Install" /> |
 
           *This comment automatically updates on each push to this PR.*
           EOF
           )
 
-          # Find and update existing sticky comment or create a new one
+          # 3. Find and update existing sticky comment or create a new one
           COMMENT_ID=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" --jq '.[] | select(.body | contains("<!-- mobile-ar-ruler-apk-preview -->")) | .id' | head -n 1)
 
           if [ -n "$COMMENT_ID" ]; then

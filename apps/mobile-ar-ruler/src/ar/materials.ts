@@ -14,7 +14,7 @@ export function initViroMaterials(): void {
         lightingModel: "Constant",
       },
       activeGuideLine: {
-        diffuseColor: "rgba(56, 189, 248, 0.75)",
+        diffuseColor: "rgba(56, 189, 248, 0.8)",
         lightingModel: "Constant",
       },
       normalAnchor: {
@@ -31,6 +31,22 @@ export function initViroMaterials(): void {
       },
       surfacePlane: {
         diffuseColor: "rgba(56, 189, 248, 0.15)",
+        lightingModel: "Constant",
+      },
+      reticleRingNormal: {
+        diffuseColor: "rgba(56, 189, 248, 0.85)",
+        lightingModel: "Constant",
+      },
+      reticleRingHover: {
+        diffuseColor: "rgba(245, 158, 11, 0.9)",
+        lightingModel: "Constant",
+      },
+      reticleRingDragged: {
+        diffuseColor: "rgba(34, 197, 94, 0.9)",
+        lightingModel: "Constant",
+      },
+      reticleCenterDot: {
+        diffuseColor: "#ffffff",
         lightingModel: "Constant",
       },
     });

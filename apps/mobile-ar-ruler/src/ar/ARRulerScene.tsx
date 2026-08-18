@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from "react";
+import React, { useState, useCallback, useRef, useMemo } from "react";
 import { StyleSheet } from "react-native";
 import {
   ViroARScene,
@@ -11,6 +11,23 @@ import {
 } from "@reactvision/react-viro";
 import { Point3D, distance3D, formatDistance } from "@plainoss/core";
 import { ARRulerSceneProps } from "./types";
+
+// Generate 24-segment smooth circular ring vertices flat on local XZ plane
+function generateCircleRing(
+  radius: number,
+  segments = 24,
+): [number, number, number][] {
+  const pts: [number, number, number][] = [];
+  for (let i = 0; i <= segments; i++) {
+    const theta = (i / segments) * Math.PI * 2;
+    pts.push([
+      Number((Math.cos(theta) * radius).toFixed(4)),
+      0.002, // 2mm offset above plane to prevent z-fighting
+      Number((Math.sin(theta) * radius).toFixed(4)),
+    ]);
+  }
+  return pts;
+}
 
 export function ARRulerScene(props: {
   sceneNavigator: { viroAppProps: ARRulerSceneProps };
@@ -29,9 +46,19 @@ export function ARRulerScene(props: {
   } = props.sceneNavigator.viroAppProps;
 
   const [reticle3D, setReticle3D] = useState<Point3D | null>(null);
-  const hasExactPlaneRef = useRef<boolean>(false);
+  const [reticleRotation, setReticleRotation] = useState<
+    [number, number, number]
+  >([0, 0, 0]);
 
-  // Native Continuous Camera Ray Hit-Testing
+  const smoothedReticleRef = useRef<Point3D | null>(null);
+  const hasExactPlaneRef = useRef<boolean>(false);
+  const lastStateUpdateRef = useRef<number>(0);
+
+  // Precomputed geometry for 3D surface reticle
+  const outerRingPoints = useMemo(() => generateCircleRing(0.055, 24), []);
+  const innerRingPoints = useMemo(() => generateCircleRing(0.025, 16), []);
+
+  // Native Continuous Camera Ray Hit-Testing with Exponential Moving Average (EMA) Smoothing
   const handleCameraARHitTest = useCallback(
     (event: ViroCameraARHitTest) => {
       const results = event.hitTestResults;
@@ -44,15 +71,50 @@ export function ARRulerScene(props: {
           results[0];
 
         if (planeHit && planeHit.transform?.position) {
-          const [x, y, z] = planeHit.transform.position;
-          const hitPos: Point3D = { x, y, z };
+          const [rawX, rawY, rawZ] = planeHit.transform.position;
           hasExactPlaneRef.current = true;
-          setReticle3D(hitPos);
-          onReticlePositionUpdate(hitPos);
-          onTrackingStateChange("NORMAL");
 
-          if (draggedHandleIndex !== null) {
-            onHandleMoved(draggedHandleIndex, hitPos);
+          // Align reticle rotation with detected plane orientation
+          if (planeHit.transform.rotation) {
+            setReticleRotation(planeHit.transform.rotation);
+          } else {
+            setReticleRotation([0, 0, 0]);
+          }
+
+          // EMA Lerp filter to remove sensor jitter & jumping
+          const LERP_ALPHA = 0.35;
+          const prev = smoothedReticleRef.current;
+          let smoothPos: Point3D = { x: rawX, y: rawY, z: rawZ };
+
+          if (prev) {
+            const dx = rawX - prev.x;
+            const dy = rawY - prev.y;
+            const dz = rawZ - prev.z;
+            const distSq = dx * dx + dy * dy + dz * dz;
+
+            // If small movement (< 0.5m), apply smooth interpolation
+            if (distSq < 0.25) {
+              smoothPos = {
+                x: Number((prev.x + dx * LERP_ALPHA).toFixed(4)),
+                y: Number((prev.y + dy * LERP_ALPHA).toFixed(4)),
+                z: Number((prev.z + dz * LERP_ALPHA).toFixed(4)),
+              };
+            }
+          }
+
+          smoothedReticleRef.current = smoothPos;
+
+          // Throttle React state updates to 60fps (~16ms) to eliminate render bottlenecks
+          const now = Date.now();
+          if (now - lastStateUpdateRef.current > 16) {
+            lastStateUpdateRef.current = now;
+            setReticle3D(smoothPos);
+            onReticlePositionUpdate(smoothPos);
+            onTrackingStateChange("NORMAL");
+
+            if (draggedHandleIndex !== null) {
+              onHandleMoved(draggedHandleIndex, smoothPos);
+            }
           }
           return;
         }
@@ -66,7 +128,7 @@ export function ARRulerScene(props: {
     ],
   );
 
-  // Fallback Camera Transform Update (Ensures targeting cursor is always active)
+  // Fallback Camera Transform Update (if no plane is detected yet)
   const handleCameraTransformUpdate = useCallback(
     (event: any) => {
       const transform = event?.cameraTransform || event;
@@ -77,12 +139,12 @@ export function ARRulerScene(props: {
       ) {
         const pos = transform.position;
         const fwd = transform.forward;
-        // Project 1.2m forward from camera
         const hitPos: Point3D = {
           x: pos[0] + fwd[0] * 1.2,
           y: pos[1] + fwd[1] * 1.2,
           z: pos[2] + fwd[2] * 1.2,
         };
+        smoothedReticleRef.current = hitPos;
         setReticle3D(hitPos);
         onReticlePositionUpdate(hitPos);
         onTrackingStateChange("NORMAL");
@@ -123,26 +185,26 @@ export function ARRulerScene(props: {
 
   // Screen Tap / AR Click Handler
   const handleSceneClick = () => {
+    const activeReticle = smoothedReticleRef.current || reticle3D;
     if (draggedHandleIndex !== null) {
-      // If currently dragging, drop and lock handle
-      if (reticle3D) {
-        onHandleDropped(draggedHandleIndex, reticle3D);
+      if (activeReticle) {
+        onHandleDropped(draggedHandleIndex, activeReticle);
       }
       return;
     }
 
     if (hoveredHandleIndex !== null) {
-      // If aiming at handle, grab it
       onHandleGrabbed(hoveredHandleIndex);
       return;
     }
 
-    if (reticle3D) {
-      onPointPlaced(reticle3D);
+    if (activeReticle) {
+      onPointPlaced(activeReticle);
     }
   };
 
-  // Measurement distance & midpoint for 3D in-AR billboard
+  // Live measurement distance & midpoint for 3D billboard text
+  const activeReticle = smoothedReticleRef.current || reticle3D;
   let measurementMidpoint: Point3D | null = null;
   let activeDistance = 0;
 
@@ -150,17 +212,25 @@ export function ARRulerScene(props: {
     activeDistance = distance3D(points[0], points[1]);
     measurementMidpoint = {
       x: (points[0].x + points[1].x) / 2,
-      y: (points[0].y + points[1].y) / 2 + 0.05,
+      y: (points[0].y + points[1].y) / 2 + 0.06,
       z: (points[0].z + points[1].z) / 2,
     };
-  } else if (points.length === 1 && points[0] && reticle3D) {
-    activeDistance = distance3D(points[0], reticle3D);
+  } else if (points.length === 1 && points[0] && activeReticle) {
+    activeDistance = distance3D(points[0], activeReticle);
     measurementMidpoint = {
-      x: reticle3D.x,
-      y: reticle3D.y + 0.06,
-      z: reticle3D.z,
+      x: (points[0].x + activeReticle.x) / 2,
+      y: (points[0].y + activeReticle.y) / 2 + 0.06,
+      z: (points[0].z + activeReticle.z) / 2,
     };
   }
+
+  const isDragging = draggedHandleIndex !== null;
+  const isHovering = hoveredHandleIndex !== null && !isDragging;
+  const reticleRingMat = isDragging
+    ? "reticleRingDragged"
+    : isHovering
+      ? "reticleRingHover"
+      : "reticleRingNormal";
 
   return (
     <ViroARScene
@@ -183,20 +253,45 @@ export function ARRulerScene(props: {
         />
       )}
 
-      {/* 2. Active Guidance Line (Point 1 -> Reticle) */}
-      {points.length === 1 && points[0] && reticle3D && (
+      {/* 2. Active Guidance Line (Point 1 -> Live Reticle) */}
+      {points.length === 1 && points[0] && activeReticle && (
         <ViroPolyline
           position={[0, 0, 0]}
           points={[
             [points[0].x, points[0].y, points[0].z],
-            [reticle3D.x, reticle3D.y, reticle3D.z],
+            [activeReticle.x, activeReticle.y, activeReticle.z],
           ]}
           thickness={0.005}
           materials={["activeGuideLine"]}
         />
       )}
 
-      {/* 3. Anchor Spheres (Point Handles) */}
+      {/* 3. In-AR 3D Surface Reticle Ring (Lies Flat on the Physical Plane) */}
+      {activeReticle && (
+        <ViroNode
+          position={[activeReticle.x, activeReticle.y, activeReticle.z]}
+          rotation={reticleRotation}
+        >
+          {/* Outer Surface-conforming Ring */}
+          <ViroPolyline
+            position={[0, 0, 0]}
+            points={outerRingPoints}
+            thickness={0.004}
+            materials={[reticleRingMat]}
+          />
+          {/* Inner Accent Ring */}
+          <ViroPolyline
+            position={[0, 0, 0]}
+            points={innerRingPoints}
+            thickness={0.0025}
+            materials={[reticleRingMat]}
+          />
+          {/* Center Surface Target Point */}
+          <ViroSphere radius={0.005} materials={["reticleCenterDot"]} />
+        </ViroNode>
+      )}
+
+      {/* 4. Anchor Spheres (Point Handles) */}
       {points.map((p, idx) => {
         const isDragged = draggedHandleIndex === idx;
         const isHovered = hoveredHandleIndex === idx;
@@ -222,7 +317,7 @@ export function ARRulerScene(props: {
         );
       })}
 
-      {/* 4. Camera-Facing In-AR 3D Spatial Billboard Text */}
+      {/* 5. Camera-Facing In-AR 3D Spatial Billboard Text */}
       {measurementMidpoint && activeDistance > 0.001 && (
         <ViroNode
           position={[

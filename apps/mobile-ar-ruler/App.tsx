@@ -92,6 +92,7 @@ export default function App() {
 
       {/* Dynamic Center Reticle */}
       <Reticle
+        isScanning={isScanning}
         isHoveringHandle={hoveredHandleIndex !== null}
         isDraggingHandle={draggedHandleIndex !== null}
       />

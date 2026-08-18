@@ -1,0 +1,16 @@
+# PlainOSS Codeowners
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Global fallback
+* @plainoss/maintainers
+
+# CI/CD Workflows & Agent standards
+/.github/ @plainoss/maintainers
+/.agents/ @plainoss/maintainers
+
+# Core calculation engines & shared configs
+/packages/ @plainoss/maintainers
+/tools/ @plainoss/maintainers
+
+# Apps
+/apps/ @plainoss/maintainers

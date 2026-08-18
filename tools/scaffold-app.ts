@@ -194,7 +194,7 @@ body {
 
 fs.writeFileSync(
   path.join(webSrcDir, "App.tsx"),
-  `import React, { useState } from 'react';
+  `import { useState } from 'react';
 import { compute${toolPascal} } from '@plainoss/core/${toolKebab}/index';
 import './index.css';
 
@@ -229,14 +229,14 @@ export function App() {
 
 fs.writeFileSync(
   path.join(webSrcDir, "main.tsx"),
-  `import React from 'react';
-import ReactDOM from 'react-dom/client';
+  `import { StrictMode } from 'react';
+import { createRoot } from 'react-dom/client';
 import { App } from './App';
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
     <App />
-  </React.StrictMode>
+  </StrictMode>
 );
 `,
 );

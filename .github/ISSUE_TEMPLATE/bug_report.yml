@@ -1,0 +1,69 @@
+name: 🐛 Bug Report
+description: Report a bug, crash, or unexpected behavior in a PlainOSS tool.
+title: 'fix(<tool-name>): <short description>'
+labels: ['bug', 'triage']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report an issue! Please provide as much detail as possible.
+
+  - type: dropdown
+    id: tool
+    attributes:
+      label: Affected Tool / Package
+      description: Which tool or package is experiencing the bug?
+      options:
+        - '@plainoss/core'
+        - 'web-sun-tracker'
+        - 'mobile-sun-tracker'
+        - 'web-ar-ruler'
+        - 'mobile-ar-ruler'
+        - 'Other (Infrastructure / Tooling)'
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      description: Where did you observe this bug?
+      options:
+        - 'Web (Chrome / Chromium)'
+        - 'Web (Safari / iOS)'
+        - 'Web (Firefox)'
+        - 'Android App'
+        - 'iOS App'
+        - 'CLI / Node.js'
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What happened? What did you expect to happen instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: How can we reliably reproduce this issue?
+      placeholder: |
+        1. Open tool '...'
+        2. Enter input '...'
+        3. Observe incorrect calculation/behavior
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Confirmation
+      options:
+        - label: I verified that this bug is not already reported in existing issues.
+          required: true
+        - label: I confirmed this happens with no browser extensions / ad-blockers interfering.
+          required: false

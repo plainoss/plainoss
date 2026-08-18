@@ -39,6 +39,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Prebuild Android project
+        working-directory: apps/mobile-ar-ruler
+        run: npx expo prebuild --platform android --clean
+
       - name: Build Android APK
         working-directory: apps/mobile-ar-ruler/android
         run: ./gradlew assembleDebug --no-daemon

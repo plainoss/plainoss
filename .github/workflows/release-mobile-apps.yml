@@ -11,8 +11,10 @@ permissions:
 
 jobs:
   build-android:
-    name: Build Android APK
+    name: Build Standalone Android APK
     runs-on: ubuntu-latest
+    env:
+      GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx3072m -XX:MaxMetaspaceSize=1024m -XX:+HeapDumpOnOutOfMemoryError"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -43,13 +45,13 @@ jobs:
         working-directory: apps/mobile-ar-ruler
         run: npx expo prebuild --platform android --clean
 
-      - name: Build Android APK
+      - name: Build Standalone Release APK
         working-directory: apps/mobile-ar-ruler/android
-        run: ./gradlew assembleDebug --no-daemon
+        run: ./gradlew assembleRelease --no-daemon
 
-      - name: Upload APK Artifact
+      - name: Upload Standalone APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: mobile-ar-ruler-apk
-          path: apps/mobile-ar-ruler/android/app/build/outputs/apk/debug/*.apk
+          path: apps/mobile-ar-ruler/android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error

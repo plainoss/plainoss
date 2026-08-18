@@ -15,6 +15,12 @@ export function App() {
   const [isARSupported, setIsARSupported] = useState<boolean | null>(null);
   const [isARActive, setIsARActive] = useState<boolean>(false);
   const [isScanning, setIsScanning] = useState<boolean>(true);
+  const [draggedHandleIndex, setDraggedHandleIndex] = useState<number | null>(
+    null,
+  );
+  const [hoveredHandleIndex, setHoveredHandleIndex] = useState<number | null>(
+    null,
+  );
   const [points, setPoints] = useState<Point3D[]>([]);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
@@ -40,6 +46,34 @@ export function App() {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
+  // Suppress XR tap when interacting with DOM UI controls
+  const handleUIControlInteraction = useCallback((e?: React.SyntheticEvent) => {
+    if (e) {
+      e.stopPropagation();
+    }
+    if (xrEngineRef.current) {
+      xrEngineRef.current.suppressTap(450);
+    }
+  }, []);
+
+  // Block beforexrselect on DOM overlay controls
+  useEffect(() => {
+    const handleBeforeXRSelect = (e: any) => {
+      const target = e.target as HTMLElement;
+      if (
+        target?.closest?.(
+          ".ar-bottom-controls, .ar-top-banner, .toast-container, button",
+        )
+      ) {
+        e.preventDefault();
+        xrEngineRef.current?.suppressTap(450);
+      }
+    };
+    document.addEventListener("beforexrselect", handleBeforeXRSelect);
+    return () =>
+      document.removeEventListener("beforexrselect", handleBeforeXRSelect);
+  }, []);
+
   const initEngine = useCallback(
     (canvas: HTMLCanvasElement) => {
       if (xrEngineRef.current) return xrEngineRef.current;
@@ -60,14 +94,40 @@ export function App() {
         onScanningStateChange: (scanning) => {
           setIsScanning(scanning);
         },
+        onHandleHoverChange: (hoverIdx) => {
+          setHoveredHandleIndex(hoverIdx);
+        },
+        onHandleGrabbed: (grabIdx, currentPts) => {
+          setDraggedHandleIndex(grabIdx);
+          setPoints([...currentPts]);
+          showToast(`Moving Point ${grabIdx + 1}. Aim & tap to lock`, "info");
+        },
+        onHandleMoved: (_idx, currentPts) => {
+          setPoints([...currentPts]);
+        },
+        onHandleDropped: (_dropIdx, currentPts) => {
+          setDraggedHandleIndex(null);
+          setPoints([...currentPts]);
+          if (currentPts.length >= 2 && currentPts[0] && currentPts[1]) {
+            const d = distance3D(currentPts[0], currentPts[1]);
+            showToast(
+              `Updated Distance: ${formatDistance(d, unit, 2)}`,
+              "success",
+            );
+          }
+        },
         onSessionStarted: () => {
           setIsARActive(true);
           setIsScanning(true);
+          setDraggedHandleIndex(null);
+          setHoveredHandleIndex(null);
           setPoints([]);
         },
         onSessionEnded: () => {
           setIsARActive(false);
           setIsScanning(true);
+          setDraggedHandleIndex(null);
+          setHoveredHandleIndex(null);
         },
       });
       engine.unit = unit;
@@ -85,7 +145,6 @@ export function App() {
       const rootOverlay = document.getElementById("root") || document.body;
       await engine.startAR(rootOverlay as HTMLElement);
     } catch (err: any) {
-      // If browser blocked due to user gesture requirement, we show the 1-tap screen silently
       if (err.name !== "SecurityError") {
         console.warn("AR start error:", err);
       }
@@ -98,7 +157,6 @@ export function App() {
       setIsARSupported(supported);
       if (supported && xrCanvasRef.current) {
         initEngine(xrCanvasRef.current);
-        // Attempt immediate auto-start (succeeds if user activated or browser allows)
         handleStartAR();
       }
     });
@@ -111,14 +169,23 @@ export function App() {
     }
   }, [unit]);
 
-  // Clear / Reset points
-  const handleReset = () => {
-    if (xrEngineRef.current) {
-      xrEngineRef.current.points = [];
-    }
-    setPoints([]);
-    showToast("Measurement cleared", "info");
-  };
+  // Clear / Reset points without placing a new point
+  const handleReset = useCallback(
+    (e?: React.SyntheticEvent) => {
+      handleUIControlInteraction(e);
+      if (xrEngineRef.current) {
+        xrEngineRef.current.points = [];
+        xrEngineRef.current.draggedPointIndex = null;
+        xrEngineRef.current.hoveredHandleIndex = null;
+        xrEngineRef.current.suppressTap(450);
+      }
+      setPoints([]);
+      setDraggedHandleIndex(null);
+      setHoveredHandleIndex(null);
+      showToast("Measurement cleared", "info");
+    },
+    [handleUIControlInteraction, showToast],
+  );
 
   // Fallback 3D Sandbox when WebXR is not available
   useEffect(() => {
@@ -130,6 +197,24 @@ export function App() {
       renderer.render(points, null, "distance", unit, "deg");
     }
   }, [isARSupported, points, unit]);
+
+  // Dynamic Instruction Text
+  let statusMessage = "🎯 Surface detected! Tap to set Point 1";
+  let isScanningClass = isScanning ? "scanning" : "";
+
+  if (isScanning) {
+    statusMessage = "📱 Move phone slowly to detect surface...";
+  } else if (draggedHandleIndex !== null) {
+    statusMessage = `📍 Moving Point ${draggedHandleIndex + 1} — Aim & tap to lock`;
+  } else if (hoveredHandleIndex !== null && points.length > 0) {
+    statusMessage = `👆 Tap to grab Point ${hoveredHandleIndex + 1} & edit line`;
+  } else if (points.length === 0) {
+    statusMessage = "🎯 Surface detected! Tap to set Point 1";
+  } else if (points.length === 1) {
+    statusMessage = "📏 Move to endpoint & tap for Point 2";
+  } else if (points.length >= 2) {
+    statusMessage = "✅ Measurement locked (Aim at handle to edit)";
+  }
 
   return (
     <div className="ar-app-root">
@@ -181,27 +266,24 @@ export function App() {
         <div className="ar-minimal-overlay">
           {/* Top Instruction Banner (safe area padding to avoid camera hole) */}
           <div className="ar-top-banner">
-            <div className={`ar-status-pill ${isScanning ? "scanning" : ""}`}>
-              {isScanning ? (
-                <>
-                  <span className="pulsing-scan-dot" aria-hidden="true" />
-                  <span>📱 Move phone slowly to detect surface...</span>
-                </>
-              ) : points.length === 0 ? (
-                "🎯 Surface detected! Tap to set Point 1"
-              ) : points.length === 1 ? (
-                "📏 Move to endpoint & tap for Point 2"
-              ) : (
-                "✅ Measurement locked (Tap to reset)"
+            <div className={`ar-status-pill ${isScanningClass}`}>
+              {isScanning && (
+                <span className="pulsing-scan-dot" aria-hidden="true" />
               )}
+              <span>{statusMessage}</span>
             </div>
           </div>
 
           {/* Bottom Minimal Controls */}
-          <div className="ar-bottom-controls">
+          <div
+            className="ar-bottom-controls"
+            onPointerDown={handleUIControlInteraction}
+            onTouchStart={handleUIControlInteraction}
+          >
             <button
               className="btn-ar-action"
               onClick={handleReset}
+              onPointerDown={handleUIControlInteraction}
               title="Clear Measurement"
             >
               🔄 Clear
@@ -212,7 +294,11 @@ export function App() {
                 <button
                   key={u}
                   className={`btn-unit-pill ${unit === u ? "active" : ""}`}
-                  onClick={() => setUnit(u)}
+                  onClick={(e) => {
+                    handleUIControlInteraction(e);
+                    setUnit(u);
+                  }}
+                  onPointerDown={handleUIControlInteraction}
                 >
                   {u}
                 </button>
@@ -221,7 +307,11 @@ export function App() {
 
             <button
               className="btn-ar-action btn-ar-exit"
-              onClick={() => xrEngineRef.current?.endAR()}
+              onClick={(e) => {
+                handleUIControlInteraction(e);
+                xrEngineRef.current?.endAR();
+              }}
+              onPointerDown={handleUIControlInteraction}
               title="Exit AR Mode"
             >
               ⏹ Exit

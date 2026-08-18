@@ -1,7 +1,6 @@
 /**
  * Pure WebGL WebXR AR Ruler Engine with 3D Spatial Billboard Measurements
- * Renders volumetric laser lines, 3D anchor spheres, and floating 3D text labels
- * anchored directly in physical room space.
+ * and Interactive 3D Handle Manipulation (Moving/Repositioning Anchors in AR).
  */
 
 import {
@@ -16,6 +15,10 @@ export interface XREngineCallbacks {
   onSessionStarted: () => void;
   onSessionEnded: () => void;
   onScanningStateChange?: (isScanning: boolean) => void;
+  onHandleHoverChange?: (index: number | null) => void;
+  onHandleGrabbed?: (index: number, points: Point3D[]) => void;
+  onHandleMoved?: (index: number, points: Point3D[]) => void;
+  onHandleDropped?: (index: number, points: Point3D[]) => void;
 }
 
 export class WebXREngine {
@@ -43,6 +46,11 @@ export class WebXREngine {
   public reticlePosition: Point3D | null = null;
   public reticleMatrix: Float32Array | null = null;
   public unit: DistanceUnit = "m";
+
+  // Handle Editing State (Moving existing points in AR space)
+  public draggedPointIndex: number | null = null;
+  public hoveredHandleIndex: number | null = null;
+  public suppressTapUntil: number = 0;
 
   constructor(canvas: HTMLCanvasElement, callbacks: XREngineCallbacks) {
     this.callbacks = callbacks;
@@ -112,11 +120,9 @@ export class WebXREngine {
       uniform vec2 uSize;
       varying vec2 vUv;
       void main() {
-        // Correct vertical flip from 2D canvas texture to WebGL
+        // Invert vertical V coordinate to match 2D Canvas texture space
         vUv = vec2((aCorner.x + 1.0) * 0.5, (1.0 - aCorner.y) * 0.5);
-        // Transform center to camera space
         vec4 camCenter = uViewMatrix * vec4(uCenterPos, 1.0);
-        // Expand quad facing camera
         vec4 camPos = camCenter + vec4(aCorner.x * uSize.x * 0.5, aCorner.y * uSize.y * 0.5, 0.0, 0.0);
         gl_Position = uProjectionMatrix * camPos;
       }
@@ -127,8 +133,7 @@ export class WebXREngine {
       uniform sampler2D uTexture;
       varying vec2 vUv;
       void main() {
-        vec4 texColor = texture2D(uTexture, vUv);
-        gl_FragColor = texColor;
+        gl_FragColor = texture2D(uTexture, vUv);
       }
     `;
 
@@ -231,6 +236,35 @@ export class WebXREngine {
     }
   }
 
+  /**
+   * Temporarily suppress XR screen taps (e.g. when tapping UI buttons like Clear or Exit).
+   */
+  public suppressTap(durationMs: number = 400): void {
+    this.suppressTapUntil = Date.now() + durationMs;
+  }
+
+  /**
+   * Finds the nearest anchor point index within a proximity radius.
+   */
+  public findNearbyPointIndex(
+    pos: Point3D,
+    threshold: number = 0.12,
+  ): number | null {
+    let bestIdx: number | null = null;
+    let minD = threshold;
+    for (let i = 0; i < this.points.length; i++) {
+      const pt = this.points[i];
+      if (pt) {
+        const d = distance3D(pt, pos);
+        if (d < minD) {
+          minD = d;
+          bestIdx = i;
+        }
+      }
+    }
+    return bestIdx;
+  }
+
   public async startAR(overlayElement?: HTMLElement): Promise<void> {
     if (this.session) {
       await this.endAR();
@@ -268,6 +302,8 @@ export class WebXREngine {
 
     this.session = session;
     this.isXRActive = true;
+    this.draggedPointIndex = null;
+    this.hoveredHandleIndex = null;
 
     const baseLayer = new (window as any).XRWebGLLayer(session, this.gl);
     await session.updateRenderState({ baseLayer });
@@ -281,8 +317,42 @@ export class WebXREngine {
     this.refSpace = refSpace;
     this.hitTestSource = hitTestSource;
 
-    // Handle screen tap (select event) to anchor point
-    session.addEventListener("select", () => {
+    // Handle screen tap (select event) for placing or moving handles
+    session.addEventListener("select", (e: any) => {
+      // 1. Ignore if user tapped a DOM UI control
+      if (Date.now() < this.suppressTapUntil) {
+        return;
+      }
+      if (
+        e.inputSource &&
+        e.inputSource.targetRayMode === "transient-pointer" &&
+        e.isOverlaySelect
+      ) {
+        return;
+      }
+
+      // 2. If currently dragging a handle -> Drop & Lock at current reticle position
+      if (this.draggedPointIndex !== null) {
+        if (this.reticlePosition) {
+          this.points[this.draggedPointIndex] = { ...this.reticlePosition };
+        }
+        const droppedIdx = this.draggedPointIndex;
+        this.draggedPointIndex = null;
+        this.callbacks.onHandleDropped?.(droppedIdx, this.points);
+        return;
+      }
+
+      // 3. If hovering near an existing handle -> Grab handle to move it
+      if (this.reticlePosition && this.points.length > 0) {
+        const nearbyIdx = this.findNearbyPointIndex(this.reticlePosition, 0.12);
+        if (nearbyIdx !== null) {
+          this.draggedPointIndex = nearbyIdx;
+          this.callbacks.onHandleGrabbed?.(nearbyIdx, this.points);
+          return;
+        }
+      }
+
+      // 4. Otherwise -> Normal point placement
       if (this.reticlePosition) {
         const pt = { ...this.reticlePosition };
         if (this.points.length >= 2) {
@@ -298,6 +368,8 @@ export class WebXREngine {
       this.isXRActive = false;
       this.session = null;
       this.hitTestSource = null;
+      this.draggedPointIndex = null;
+      this.hoveredHandleIndex = null;
       this.callbacks.onSessionEnded();
     });
 
@@ -317,11 +389,31 @@ export class WebXREngine {
           this.reticlePosition = { x: pos.x, y: pos.y, z: pos.z };
           this.reticleMatrix = pose.transform.matrix;
           this.callbacks.onScanningStateChange?.(false);
+
+          // If dragging a handle, update its position with the live reticle
+          if (this.draggedPointIndex !== null) {
+            this.points[this.draggedPointIndex] = { ...this.reticlePosition };
+            this.callbacks.onHandleMoved?.(this.draggedPointIndex, this.points);
+          } else {
+            // Check if hovering near an existing handle
+            const nearby = this.findNearbyPointIndex(
+              this.reticlePosition,
+              0.12,
+            );
+            if (nearby !== this.hoveredHandleIndex) {
+              this.hoveredHandleIndex = nearby;
+              this.callbacks.onHandleHoverChange?.(nearby);
+            }
+          }
         }
       } else {
         this.reticlePosition = null;
         this.reticleMatrix = null;
         this.callbacks.onScanningStateChange?.(true);
+        if (this.hoveredHandleIndex !== null) {
+          this.hoveredHandleIndex = null;
+          this.callbacks.onHandleHoverChange?.(null);
+        }
       }
 
       // Render WebXR scene into XRWebGLLayer framebuffer
@@ -358,6 +450,8 @@ export class WebXREngine {
       }
       this.session = null;
       this.isXRActive = false;
+      this.draggedPointIndex = null;
+      this.hoveredHandleIndex = null;
     }
   }
 
@@ -403,7 +497,15 @@ export class WebXREngine {
     // 1a. Surface Reticle (Volumetric 3D Torus)
     if (this.reticleMatrix) {
       gl.uniformMatrix4fv(uModel, false, this.reticleMatrix);
-      gl.uniform4f(uColor, 0.22, 0.74, 0.97, 0.95);
+
+      // Color reticle cyan, or yellow if hovering near a handle, or green if dragging
+      if (this.draggedPointIndex !== null) {
+        gl.uniform4f(uColor, 0.13, 0.77, 0.36, 0.95); // Green when dragging
+      } else if (this.hoveredHandleIndex !== null) {
+        gl.uniform4f(uColor, 0.98, 0.75, 0.18, 0.95); // Gold when over a handle
+      } else {
+        gl.uniform4f(uColor, 0.22, 0.74, 0.97, 0.95); // Cyan standard
+      }
 
       const torusVerts = this.createTorusMesh(0.075, 0.005, 24, 8);
       gl.bufferData(
@@ -429,7 +531,12 @@ export class WebXREngine {
     let currentDistanceValue: number = 0;
 
     // 1b. Live Guidance Line (Point 1 -> Reticle)
-    if (this.points.length === 1 && this.points[0] && this.reticlePosition) {
+    if (
+      this.points.length === 1 &&
+      this.points[0] &&
+      this.reticlePosition &&
+      this.draggedPointIndex === null
+    ) {
       gl.uniform4f(uColor, 0.22, 0.74, 0.97, 0.8); // Glowing Cyan Tube
 
       const tubeVerts = this.createCylinderMesh(
@@ -454,7 +561,7 @@ export class WebXREngine {
       };
     }
 
-    // 1c. Locked Measurement Line (Point 1 -> Point 2)
+    // 1c. Locked / Active Measurement Line (Point 1 -> Point 2)
     if (this.points.length >= 2 && this.points[0] && this.points[1]) {
       gl.uniform4f(uColor, 0.23, 0.51, 0.96, 1.0); // Bold Blue Tube
 
@@ -480,21 +587,41 @@ export class WebXREngine {
       };
     }
 
-    // 1d. Placed 3D Spheres for Anchors
-    if (this.points.length > 0) {
-      gl.uniform4f(uColor, 0.98, 0.75, 0.18, 1.0); // Bright Gold Spheres
+    // 1d. Render 3D Handles / Anchor Spheres
+    for (let i = 0; i < this.points.length; i++) {
+      const p = this.points[i];
+      if (!p) continue;
 
-      const sphereVerts: number[] = [];
-      for (const p of this.points) {
-        sphereVerts.push(...this.createSphereMesh(p, 0.016, 10));
-      }
-      if (sphereVerts.length > 0) {
+      const isDragged = this.draggedPointIndex === i;
+      const isHovered = this.hoveredHandleIndex === i;
+
+      if (isDragged) {
+        gl.uniform4f(uColor, 0.13, 0.77, 0.36, 1.0); // Bright Green when dragging
+        const verts = this.createSphereMesh(p, 0.024, 12);
         gl.bufferData(
           gl.ARRAY_BUFFER,
-          new Float32Array(sphereVerts),
+          new Float32Array(verts),
           gl.DYNAMIC_DRAW,
         );
-        gl.drawArrays(gl.TRIANGLES, 0, sphereVerts.length / 3);
+        gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
+      } else if (isHovered) {
+        gl.uniform4f(uColor, 0.98, 0.75, 0.18, 1.0); // Large Golden Pulsing Handle
+        const verts = this.createSphereMesh(p, 0.022, 12);
+        gl.bufferData(
+          gl.ARRAY_BUFFER,
+          new Float32Array(verts),
+          gl.DYNAMIC_DRAW,
+        );
+        gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
+      } else {
+        gl.uniform4f(uColor, 0.98, 0.75, 0.18, 0.9); // Normal Gold Anchor Sphere
+        const verts = this.createSphereMesh(p, 0.016, 10);
+        gl.bufferData(
+          gl.ARRAY_BUFFER,
+          new Float32Array(verts),
+          gl.DYNAMIC_DRAW,
+        );
+        gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
       }
     }
 
@@ -530,7 +657,6 @@ export class WebXREngine {
         measurementMidpoint.y,
         measurementMidpoint.z,
       );
-      // Billboard size: 18cm wide, 5.5cm tall in real physical world
       gl.uniform2f(uBillSize, 0.18, 0.055);
 
       gl.activeTexture(gl.TEXTURE0);

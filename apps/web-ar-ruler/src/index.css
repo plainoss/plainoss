@@ -151,6 +151,16 @@ body {
   display: block;
 }
 
+.canvas-webxr {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: none;
+  z-index: 2;
+  touch-action: none;
+}
+
 .canvas-3d {
   position: relative;
   z-index: 2;

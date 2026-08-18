@@ -1,6 +1,6 @@
 /**
  * Pure WebGL WebXR AR Ruler Engine
- * Visualizes structured 3D light-dot surface grid matrix during scanning and detection,
+ * Visualizes room-scale physical surface plane grid matrix across entire detected floors/surfaces,
  * a clean minimalist placement pointer when surface is detected,
  * and 3D volumetric laser measurement lines with interactive handles.
  */
@@ -51,6 +51,9 @@ export class WebXREngine {
   public reticlePosition: Point3D | null = null;
   public reticleMatrix: Float32Array | null = null;
   public unit: DistanceUnit = "m";
+
+  // Room-Scale Surface Plane Tracking
+  private detectedGroundY: number | null = null;
 
   // Handle Editing State (Moving existing points in AR space)
   public draggedPointIndex: number | null = null;
@@ -149,7 +152,7 @@ export class WebXREngine {
     ]);
     gl.bufferData(gl.ARRAY_BUFFER, quadVerts, gl.STATIC_DRAW);
 
-    // 3. 3D Light-Dot Surface Grid Matrix Shader
+    // 3. 3D Light-Dot Surface Grid Matrix Shader (Room-Scale Physical Surface Matrix)
     const vsPointCloud = `
       attribute vec3 aPosition;
       attribute float aAlpha;
@@ -161,8 +164,7 @@ export class WebXREngine {
         vec4 viewPos = uViewMatrix * vec4(aPosition, 1.0);
         gl_Position = uProjectionMatrix * viewPos;
         float dist = max(0.4, -viewPos.z);
-        // Crisp, refined grid point size
-        gl_PointSize = clamp(110.0 / dist, 4.0, 18.0);
+        gl_PointSize = clamp(95.0 / dist, 3.5, 15.0);
       }
     `;
 
@@ -173,10 +175,9 @@ export class WebXREngine {
         vec2 coord = gl_PointCoord - vec2(0.5);
         float dist = length(coord);
         if (dist > 0.5) discard;
-        // Soft radial glow around a bright dot center
         float glow = smoothstep(0.5, 0.0, dist);
         float core = smoothstep(0.18, 0.0, dist);
-        float alpha = (glow * 0.6 + core * 0.4) * vAlpha;
+        float alpha = (glow * 0.55 + core * 0.45) * vAlpha;
         gl_FragColor = vec4(0.82, 0.94, 1.0, alpha);
       }
     `;
@@ -186,46 +187,52 @@ export class WebXREngine {
   }
 
   /**
-   * Generates a structured planar grid of light dots on the detected physical surface.
+   * Generates a room-scale planar grid of light dots across the entire detected physical floor/surface plane.
+   * Dots are anchored to fixed world coordinates so they stay locked onto the real floor.
    */
-  private generateGridDots(
+  private generateRoomPlaneGrid(
     timeSec: number,
-    targetPos: Point3D,
-    surfaceMat: Float32Array | null,
+    camPos: Point3D,
+    camForward: Point3D,
   ): number[] {
+    const groundY =
+      this.detectedGroundY !== null ? this.detectedGroundY : camPos.y - 0.6;
     const dots: number[] = [];
-    const gridSize = 15; // 15x15 grid matrix
-    const spacing = 0.08; // 8cm pitch between grid dots
-    const half = Math.floor(gridSize / 2);
-    const maxRadius = half * spacing;
 
-    for (let ix = -half; ix <= half; ix++) {
-      for (let iz = -half; iz <= half; iz++) {
-        const lx = ix * spacing;
-        const lz = iz * spacing;
-        const r = Math.hypot(lx, lz);
-        if (r > maxRadius) continue;
+    const spacing = 0.12; // 12cm grid pitch
+    const maxRadius = 3.6; // 3.6m radius (covers ~7m x 7m room floor)
 
-        // Structured geometric falloff and subtle outward pulse (delicate, light visibility at all times)
-        const falloff = Math.max(0, 1.0 - r / maxRadius);
-        const wave = 0.7 + 0.3 * Math.sin(r * 12.0 - timeSec * 2.5);
-        const alpha = falloff * falloff * wave * 0.45;
+    // Center the world sampling around camera position snapped to grid
+    const snapX = Math.round(camPos.x / spacing) * spacing;
+    const snapZ = Math.round(camPos.z / spacing) * spacing;
+    const steps = Math.floor(maxRadius / spacing);
 
-        if (alpha < 0.015) continue;
+    for (let ix = -steps; ix <= steps; ix++) {
+      for (let iz = -steps; iz <= steps; iz++) {
+        const wx = snapX + ix * spacing;
+        const wz = snapZ + iz * spacing;
 
-        if (surfaceMat) {
-          // Transform local grid coordinates using detected surface orientation matrix
-          const x = surfaceMat[0]! * lx + surfaceMat[8]! * lz + surfaceMat[12]!;
-          const y = surfaceMat[1]! * lx + surfaceMat[9]! * lz + surfaceMat[13]!;
-          const z =
-            surfaceMat[2]! * lx + surfaceMat[10]! * lz + surfaceMat[14]!;
-          dots.push(x, y, z, alpha);
-        } else {
-          // Horizontal surface estimate before lock
-          dots.push(targetPos.x + lx, targetPos.y, targetPos.z + lz, alpha);
-        }
+        const dx = wx - camPos.x;
+        const dz = wz - camPos.z;
+        const distFromCam = Math.hypot(dx, dz);
+        if (distFromCam > maxRadius) continue;
+
+        // Check if point is in front of camera hemisphere
+        const dotForward = dx * camForward.x + dz * camForward.z;
+        if (dotForward < -0.4) continue; // Behind camera
+
+        // Subtle, delicate room-scale surface visibility (max alpha 0.24)
+        const radialFalloff = Math.max(0, 1.0 - distFromCam / maxRadius);
+        const subtleWave =
+          0.75 + 0.25 * Math.sin(distFromCam * 8.0 - timeSec * 2.0);
+        const alpha = radialFalloff * radialFalloff * subtleWave * 0.24;
+
+        if (alpha < 0.012) continue;
+
+        dots.push(wx, groundY, wz, alpha);
       }
     }
+
     return dots;
   }
 
@@ -368,7 +375,7 @@ export class WebXREngine {
       try {
         session = await xr.requestSession("immersive-ar", {
           requiredFeatures: ["hit-test"],
-          optionalFeatures: ["dom-overlay", "local-floor"],
+          optionalFeatures: ["dom-overlay", "local-floor", "plane-detection"],
           domOverlay: { root: overlayElement },
         });
       } catch (domErr) {
@@ -379,7 +386,7 @@ export class WebXREngine {
     if (!session) {
       session = await xr.requestSession("immersive-ar", {
         requiredFeatures: ["hit-test"],
-        optionalFeatures: ["local-floor"],
+        optionalFeatures: ["local-floor", "plane-detection"],
       });
     }
 
@@ -387,6 +394,7 @@ export class WebXREngine {
     this.isXRActive = true;
     this.draggedPointIndex = null;
     this.hoveredHandleIndex = null;
+    this.detectedGroundY = null;
 
     const baseLayer = new (window as any).XRWebGLLayer(session, this.gl);
     await session.updateRenderState({ baseLayer });
@@ -453,6 +461,7 @@ export class WebXREngine {
       this.hitTestSource = null;
       this.draggedPointIndex = null;
       this.hoveredHandleIndex = null;
+      this.detectedGroundY = null;
       this.callbacks.onSessionEnded();
     });
 
@@ -471,6 +480,7 @@ export class WebXREngine {
           const pos = pose.transform.position;
           this.reticlePosition = { x: pos.x, y: pos.y, z: pos.z };
           this.reticleMatrix = pose.transform.matrix;
+          this.detectedGroundY = pos.y;
           this.callbacks.onScanningStateChange?.(false);
 
           // If dragging a handle, update its position with the live reticle
@@ -512,16 +522,11 @@ export class WebXREngine {
         const camMat = pose.transform.matrix;
         const camForward = { x: -camMat[8], y: -camMat[9], z: -camMat[10] };
 
-        const targetPos = this.reticlePosition || {
-          x: camPos.x + camForward.x * 1.2,
-          y: camPos.y - 0.55,
-          z: camPos.z + camForward.z * 1.2,
-        };
-
-        const gridDots = this.generateGridDots(
+        // Generate room-scale physical surface grid dots
+        const roomDots = this.generateRoomPlaneGrid(
           timeSec,
-          targetPos,
-          this.reticleMatrix,
+          camPos,
+          camForward,
         );
 
         for (const view of pose.views) {
@@ -531,7 +536,7 @@ export class WebXREngine {
           this.renderScene(
             view.projectionMatrix,
             view.transform.inverse.matrix,
-            gridDots,
+            roomDots,
           );
         }
       }
@@ -553,6 +558,7 @@ export class WebXREngine {
       this.isXRActive = false;
       this.draggedPointIndex = null;
       this.hoveredHandleIndex = null;
+      this.detectedGroundY = null;
     }
   }
 
@@ -563,7 +569,7 @@ export class WebXREngine {
   private renderScene(
     projectionMatrix: Float32Array,
     viewMatrix: Float32Array,
-    gridDots: number[],
+    roomGridDots: number[],
   ): void {
     const gl = this.gl;
     gl.enable(gl.DEPTH_TEST);
@@ -575,9 +581,9 @@ export class WebXREngine {
     ]);
 
     // ==========================================
-    // 1. RENDER 3D STRUCTURED LIGHT-DOT SURFACE GRID (Continuous Subtle Matrix)
+    // 1. RENDER ROOM-SCALE PHYSICAL SURFACE PLANE GRID
     // ==========================================
-    if (gridDots.length > 0) {
+    if (roomGridDots.length > 0) {
       gl.useProgram(this.pointCloudProgram);
 
       const uProj = gl.getUniformLocation(
@@ -594,7 +600,7 @@ export class WebXREngine {
       gl.bindBuffer(gl.ARRAY_BUFFER, this.pointCloudBuffer);
       gl.bufferData(
         gl.ARRAY_BUFFER,
-        new Float32Array(gridDots),
+        new Float32Array(roomGridDots),
         gl.DYNAMIC_DRAW,
       );
 
@@ -607,7 +613,7 @@ export class WebXREngine {
       gl.enableVertexAttribArray(alphaAttr);
       gl.vertexAttribPointer(alphaAttr, 1, gl.FLOAT, false, 16, 12);
 
-      gl.drawArrays(gl.POINTS, 0, gridDots.length / 4);
+      gl.drawArrays(gl.POINTS, 0, roomGridDots.length / 4);
 
       gl.disableVertexAttribArray(alphaAttr);
     }

@@ -35,3 +35,6 @@ jobs:
 
       - name: Run Unit Tests
         run: pnpm run test
+
+      - name: Build Packages & Apps
+        run: pnpm run build

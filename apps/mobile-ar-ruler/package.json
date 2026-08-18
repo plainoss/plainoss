@@ -20,6 +20,6 @@
   "devDependencies": {
     "@plainoss/tsconfig": "workspace:*",
     "@types/react": "~18.3.12",
-    "typescript": "^5.7.0"
+    "typescript": "^7.0.2"
   }
 }

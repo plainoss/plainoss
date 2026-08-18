@@ -111,7 +111,8 @@ export class WebXREngine {
       uniform vec2 uSize;
       varying vec2 vUv;
       void main() {
-        vUv = (aCorner + 1.0) * 0.5;
+        // Correct vertical flip from 2D canvas texture to WebGL
+        vUv = vec2((aCorner.x + 1.0) * 0.5, (1.0 - aCorner.y) * 0.5);
         // Transform center to camera space
         vec4 camCenter = uViewMatrix * vec4(uCenterPos, 1.0);
         // Expand quad facing camera

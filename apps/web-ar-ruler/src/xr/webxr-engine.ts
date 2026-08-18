@@ -686,18 +686,10 @@ export class WebXREngine {
 
       // Pre-computed static reticle ring (4,032 floats) and targeting dot (1,152 floats)
       // Eliminates thousands of trig calls and array allocations per frame
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        this.cachedTorusVerts,
-        gl.STATIC_DRAW,
-      );
+      gl.bufferData(gl.ARRAY_BUFFER, this.cachedTorusVerts, gl.STATIC_DRAW);
       gl.drawArrays(gl.TRIANGLES, 0, this.cachedTorusVerts.length / 3);
 
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        this.cachedDotVerts,
-        gl.STATIC_DRAW,
-      );
+      gl.bufferData(gl.ARRAY_BUFFER, this.cachedDotVerts, gl.STATIC_DRAW);
       gl.drawArrays(gl.TRIANGLES, 0, this.cachedDotVerts.length / 3);
 
       gl.uniformMatrix4fv(uModel, false, identity);

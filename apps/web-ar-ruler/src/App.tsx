@@ -360,7 +360,7 @@ export function App() {
                 <option value="yd">Yards (yd)</option>
               </select>
               <div className="ar-unit-select-badge" aria-hidden="true">
-                <span className="unit-label">{unit.toUpperCase()}</span>
+                <span className="unit-label">{unit}</span>
                 <ChevronDown
                   size={14}
                   strokeWidth={2.5}

@@ -261,6 +261,7 @@ fs.writeFileSync(
       private: true,
       main: "index.js",
       scripts: {
+        dev: "expo start",
         start: "expo start",
         android: "expo start --android",
         ios: "expo start --ios",

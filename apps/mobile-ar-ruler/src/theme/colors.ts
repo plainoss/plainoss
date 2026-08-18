@@ -1,0 +1,16 @@
+export const THEME = {
+  bgPrimary: "#09090b",
+  bgSurface: "rgba(15, 23, 42, 0.88)",
+  bgSurfaceSolid: "#0f172a",
+  border: "rgba(255, 255, 255, 0.12)",
+  borderAccent: "rgba(56, 189, 248, 0.4)",
+  textPrimary: "#f8fafc",
+  textSecondary: "#94a3b8",
+  textMuted: "#64748b",
+  accentCyan: "#38bdf8",
+  accentBlue: "#3b82f6",
+  accentGold: "#fbbf24",
+  accentGreen: "#22c55e",
+  accentRed: "#ef4444",
+  overlayBg: "rgba(0, 0, 0, 0.5)",
+};

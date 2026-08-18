@@ -40,6 +40,18 @@ pnpm install
 ### Common Commands
 
 ```bash
+# Start Web development server
+pnpm run web       # or: npm run web
+
+# Start Mobile Expo development server
+pnpm run mobile    # or: npm run mobile
+
+# Run Mobile on Android emulator/device
+pnpm run android   # or: npm run android
+
+# Run Mobile on iOS simulator/device
+pnpm run ios       # or: npm run ios
+
 # Typecheck all packages & apps
 pnpm run typecheck
 

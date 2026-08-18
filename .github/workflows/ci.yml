@@ -8,7 +8,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
+  pull-requests: write
 
 jobs:
   verify:
@@ -42,3 +43,95 @@ jobs:
 
       - name: Build Packages & Apps
         run: pnpm run build
+
+  build-android:
+    name: Build Standalone Android APK
+    runs-on: ubuntu-latest
+    env:
+      GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx3072m -XX:MaxMetaspaceSize=1024m -XX:+HeapDumpOnOutOfMemoryError"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.13.1
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: "temurin"
+          java-version: "21"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Prebuild Android project
+        working-directory: apps/mobile-ar-ruler
+        run: npx expo prebuild --platform android --clean
+
+      - name: Build Standalone Release APK
+        working-directory: apps/mobile-ar-ruler/android
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Upload Standalone APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-ar-ruler-apk
+          path: apps/mobile-ar-ruler/android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+
+      - name: Publish Direct APK & Update PR Sticky Comment
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          APK_PATH="apps/mobile-ar-ruler/android/app/build/outputs/apk/release/app-release.apk"
+          TAG="pr-apk-previews"
+          ASSET_NAME="mobile-ar-ruler-pr-${PR_NUMBER}.apk"
+          QR_ASSET_NAME="mobile-ar-ruler-pr-${PR_NUMBER}-qr.png"
+          DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${TAG}/${ASSET_NAME}"
+          QR_IMAGE_URL="https://github.com/${REPO}/releases/download/${TAG}/${QR_ASSET_NAME}"
+
+          # 1. Prepare named files for direct download
+          cp "${APK_PATH}" "${ASSET_NAME}"
+          pnpm dlx qrcode -w 300 -o "${QR_ASSET_NAME}" "$DOWNLOAD_URL"
+
+          # 2. Create rolling release tag if not existing, then upload raw uncompressed APK & QR image
+          gh release view "$TAG" --repo "$REPO" || gh release create "$TAG" --title "PR APK Previews" --notes "Automated rolling APK builds for active pull requests" --prerelease --repo "$REPO"
+          gh release upload "$TAG" "${ASSET_NAME}" "${QR_ASSET_NAME}" --clobber --repo "$REPO"
+
+          SHORT_SHA="${SHA:0:7}"
+
+          COMMENT_BODY=$(cat <<EOF
+          <!-- mobile-ar-ruler-apk-preview -->
+          ## 📱 Mobile AR Ruler Preview APK
+
+          | Direct Download (Uncompressed APK) | QR Code (Scan with Phone) |
+          | :--- | :---: |
+          | ⬇️ [**Download \`${ASSET_NAME}\`**](${DOWNLOAD_URL})<br><br> • **Commit**: \`${SHORT_SHA}\`<br> • **Type**: Standalone Release Build (No dev server needed)<br> • **Updated**: $(date -u +"%Y-%m-%d %H:%M UTC") | <img src="${QR_IMAGE_URL}" width="160" height="160" alt="Scan to Install" /> |
+
+          *This comment automatically updates on each push to this PR.*
+          EOF
+          )
+
+          # 3. Find and update existing sticky comment or create a new one
+          COMMENT_ID=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" --jq '.[] | select(.body | contains("<!-- mobile-ar-ruler-apk-preview -->")) | .id' | head -n 1)
+
+          if [ -n "$COMMENT_ID" ]; then
+            gh api -X PATCH "repos/${REPO}/issues/comments/${COMMENT_ID}" -f body="$COMMENT_BODY"
+          else
+            gh api -X POST "repos/${REPO}/issues/${PR_NUMBER}/comments" -f body="$COMMENT_BODY"
+          fi

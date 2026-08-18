@@ -3,13 +3,18 @@ name: Build & Release Mobile Apps
 on:
   push:
     tags:
-      - 'mobile-*'
+      - "mobile-*"
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build-android:
-    name: Build Android APK
+    name: Build Standalone Android APK
     runs-on: ubuntu-latest
+    env:
+      GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx3072m -XX:MaxMetaspaceSize=1024m -XX:+HeapDumpOnOutOfMemoryError"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -27,8 +32,26 @@ jobs:
       - name: Setup Java
         uses: actions/setup-java@v5
         with:
-          distribution: 'temurin'
-          java-version: '17'
+          distribution: "temurin"
+          java-version: "21"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Prebuild Android project
+        working-directory: apps/mobile-ar-ruler
+        run: npx expo prebuild --platform android --clean
+
+      - name: Build Standalone Release APK
+        working-directory: apps/mobile-ar-ruler/android
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Upload Standalone APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-ar-ruler-apk
+          path: apps/mobile-ar-ruler/android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error

@@ -8,6 +8,12 @@
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
+    "dev:web": "pnpm --filter web-ar-ruler dev",
+    "dev:mobile": "pnpm --filter mobile-ar-ruler start",
+    "android": "pnpm --filter mobile-ar-ruler android",
+    "ios": "pnpm --filter mobile-ar-ruler ios",
+    "mobile": "pnpm --filter mobile-ar-ruler start",
+    "web": "pnpm --filter web-ar-ruler dev",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",

@@ -1,0 +1,11 @@
+{
+  "compilerOptions": {
+    "composite": true
+  },
+  "references": [
+    { "path": "./packages/core" },
+    { "path": "./apps/web-ar-ruler" },
+    { "path": "./apps/mobile-ar-ruler" }
+  ],
+  "files": []
+}

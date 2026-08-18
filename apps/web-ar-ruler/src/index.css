@@ -283,6 +283,12 @@ body {
   color: #0f172a;
 }
 
+.ar-status-icon-wrapper {
+  display: inline-flex;
+  align-items: center;
+  color: #38bdf8;
+}
+
 .btn-ar-action {
   background: var(--bg-glass);
   backdrop-filter: blur(16px);
@@ -296,6 +302,9 @@ body {
   border-radius: var(--radius-full);
   cursor: pointer;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
   transition:
     transform 0.1s ease,
     background 0.15s ease;

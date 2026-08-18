@@ -1,4 +1,14 @@
 import React from "react";
+import {
+  Ruler,
+  Camera,
+  Square,
+  AlertTriangle,
+  History,
+  HelpCircle,
+  Sun,
+  Moon,
+} from "lucide-react";
 import { Theme } from "../hooks/useTheme";
 
 interface HeaderProps {
@@ -26,7 +36,7 @@ export const Header: React.FC<HeaderProps> = ({
     <header className="app-header">
       <div className="header-brand">
         <div className="brand-logo" aria-hidden="true">
-          📐
+          <Ruler size={22} strokeWidth={2.2} />
         </div>
         <div>
           <h1 className="brand-title">AR Ruler</h1>
@@ -45,7 +55,9 @@ export const Header: React.FC<HeaderProps> = ({
               isARActive ? "Exit WebXR AR" : "Enter WebXR Immersive AR Mode"
             }
           >
-            <span aria-hidden="true">{isARActive ? "⏹" : "📷"}</span>
+            <span aria-hidden="true">
+              {isARActive ? <Square size={16} /> : <Camera size={16} />}
+            </span>
             <span>{isARActive ? "Stop AR" : "Start AR"}</span>
           </button>
         ) : (
@@ -54,7 +66,9 @@ export const Header: React.FC<HeaderProps> = ({
             disabled
             title="WebXR Immersive AR is not supported on this browser/device. Requires Chrome on ARCore Android, Quest Browser, or WebXR headset."
           >
-            <span aria-hidden="true">⚠️</span>
+            <span aria-hidden="true">
+              <AlertTriangle size={16} />
+            </span>
             <span>AR Not Supported</span>
           </button>
         )}
@@ -65,7 +79,9 @@ export const Header: React.FC<HeaderProps> = ({
           aria-label="Measurement History"
           title="Measurement History"
         >
-          <span aria-hidden="true">📋</span>
+          <span aria-hidden="true">
+            <History size={16} />
+          </span>
           <span>History</span>
           {historyCount > 0 && (
             <span className="badge-count">{historyCount}</span>
@@ -78,7 +94,7 @@ export const Header: React.FC<HeaderProps> = ({
           aria-label="Help and Shortcuts"
           title="Help & Shortcuts"
         >
-          ❓
+          <HelpCircle size={18} />
         </button>
 
         <button
@@ -87,7 +103,7 @@ export const Header: React.FC<HeaderProps> = ({
           aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
           title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
         >
-          {theme === "dark" ? "☀️" : "🌙"}
+          {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
         </button>
       </nav>
     </header>

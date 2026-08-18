@@ -1,5 +1,17 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
+  Scan,
+  Crosshair,
+  Move,
+  Hand,
+  CheckCircle2,
+  RotateCcw,
+  LogOut,
+  Camera,
+  AlertTriangle,
+  Ruler,
+} from "lucide-react";
+import {
   Point3D,
   DistanceUnit,
   distance3D,
@@ -202,22 +214,29 @@ export function App() {
     }
   }, [isARSupported, points, unit]);
 
-  // Dynamic Instruction Text
-  let statusMessage = "🎯 Surface detected! Tap to set Point 1";
+  // Dynamic Instruction Icon & Text
+  let statusIcon = <Crosshair size={16} aria-hidden="true" />;
+  let statusMessage = "Surface detected — Tap to set Point 1";
   let isScanningClass = isScanning ? "scanning" : "";
 
   if (isScanning) {
-    statusMessage = "📱 Move phone slowly to detect surface...";
+    statusIcon = <Scan size={16} aria-hidden="true" />;
+    statusMessage = "Move phone slowly to detect surface...";
   } else if (draggedHandleIndex !== null) {
-    statusMessage = `📍 Moving Point ${draggedHandleIndex + 1} — Aim & tap to lock`;
+    statusIcon = <Move size={16} aria-hidden="true" />;
+    statusMessage = `Moving Point ${draggedHandleIndex + 1} — Aim & tap to lock`;
   } else if (hoveredHandleIndex !== null && points.length > 0) {
-    statusMessage = `👆 Tap to grab Point ${hoveredHandleIndex + 1} & edit line`;
+    statusIcon = <Hand size={16} aria-hidden="true" />;
+    statusMessage = `Tap to grab Point ${hoveredHandleIndex + 1} & edit line`;
   } else if (points.length === 0) {
-    statusMessage = "🎯 Surface detected! Tap to set Point 1";
+    statusIcon = <Crosshair size={16} aria-hidden="true" />;
+    statusMessage = "Surface detected — Tap to set Point 1";
   } else if (points.length === 1) {
-    statusMessage = "📏 Move to endpoint & tap for Point 2";
+    statusIcon = <Ruler size={16} aria-hidden="true" />;
+    statusMessage = "Move to endpoint & tap for Point 2";
   } else if (points.length >= 2) {
-    statusMessage = "✅ Measurement locked (Aim at handle to edit)";
+    statusIcon = <CheckCircle2 size={16} aria-hidden="true" />;
+    statusMessage = "Measurement locked (Aim at handle to edit)";
   }
 
   return (
@@ -238,7 +257,9 @@ export function App() {
           tabIndex={0}
         >
           <div className="tap-launcher-content">
-            <div className="pulsing-ar-badge">📷</div>
+            <div className="pulsing-ar-badge">
+              <Camera size={38} strokeWidth={1.75} />
+            </div>
             <h2>AR Ruler</h2>
             <p>Tap anywhere on screen to begin</p>
           </div>
@@ -249,7 +270,9 @@ export function App() {
       {isARSupported === false && (
         <div className="unsupported-screen">
           <div className="unsupported-card">
-            <div className="unsupported-icon">📐</div>
+            <div className="unsupported-icon">
+              <AlertTriangle size={38} strokeWidth={1.75} />
+            </div>
             <h2>WebXR AR Required</h2>
             <p>
               AR Ruler requires <strong>WebXR Immersive-AR</strong> with surface
@@ -271,8 +294,10 @@ export function App() {
           {/* Top Instruction Banner (safe area padding to avoid camera hole) */}
           <div className="ar-top-banner">
             <div className={`ar-status-pill ${isScanningClass}`}>
-              {isScanning && (
+              {isScanning ? (
                 <span className="pulsing-scan-dot" aria-hidden="true" />
+              ) : (
+                <span className="ar-status-icon-wrapper">{statusIcon}</span>
               )}
               <span>{statusMessage}</span>
             </div>
@@ -290,7 +315,8 @@ export function App() {
               onPointerDown={handleUIControlInteraction}
               title="Clear Measurement"
             >
-              🔄 Clear
+              <RotateCcw size={16} strokeWidth={2} />
+              <span>Clear</span>
             </button>
 
             <div className="ar-unit-pill-group">
@@ -318,7 +344,8 @@ export function App() {
               onPointerDown={handleUIControlInteraction}
               title="Exit AR Mode"
             >
-              ⏹ Exit
+              <LogOut size={16} strokeWidth={2} />
+              <span>Exit</span>
             </button>
           </div>
         </div>

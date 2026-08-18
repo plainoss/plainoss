@@ -1,4 +1,5 @@
 import React from "react";
+import { X, Copy, Trash2, Ruler } from "lucide-react";
 import { MeasurementRecord } from "@plainoss/core";
 
 interface HistoryDrawerProps {
@@ -38,7 +39,7 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
             onClick={onClose}
             aria-label="Close history panel"
           >
-            ✕
+            <X size={18} />
           </button>
         </div>
 
@@ -48,21 +49,25 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
             onClick={onCopyAll}
             disabled={records.length === 0}
           >
-            📋 Copy All
+            <Copy size={14} />
+            <span>Copy All</span>
           </button>
           <button
             className="btn btn-danger btn-sm"
             onClick={onClearAll}
             disabled={records.length === 0}
           >
-            🗑️ Clear History
+            <Trash2 size={14} />
+            <span>Clear History</span>
           </button>
         </div>
 
         <div className="drawer-list">
           {records.length === 0 ? (
             <div className="empty-state">
-              <span className="empty-icon">📏</span>
+              <span className="empty-icon">
+                <Ruler size={36} strokeWidth={1.5} />
+              </span>
               <p>No saved measurements yet.</p>
               <span className="empty-sub">
                 Take measurements and click "Save" to log them here.
@@ -88,13 +93,15 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
                     className="btn btn-secondary btn-xs"
                     onClick={() => onCopyRecord(r)}
                   >
-                    Copy
+                    <Copy size={12} />
+                    <span>Copy</span>
                   </button>
                   <button
                     className="btn btn-danger btn-xs"
                     onClick={() => onDeleteRecord(r.id)}
                   >
-                    Delete
+                    <Trash2 size={12} />
+                    <span>Delete</span>
                   </button>
                 </div>
               </div>

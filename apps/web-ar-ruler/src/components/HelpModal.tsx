@@ -1,4 +1,5 @@
 import React from "react";
+import { X, Gamepad2, Smartphone, Keyboard } from "lucide-react";
 
 interface HelpModalProps {
   isOpen: boolean;
@@ -24,13 +25,16 @@ export const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
             onClick={onClose}
             aria-label="Close dialog"
           >
-            ✕
+            <X size={18} />
           </button>
         </div>
 
         <div className="modal-body">
           <section className="help-section">
-            <h3>🎮 3D Sandbox Controls</h3>
+            <h3>
+              <Gamepad2 size={18} className="help-header-icon" />
+              <span>3D Sandbox Controls</span>
+            </h3>
             <ul>
               <li>
                 <strong>Left-Click + Drag:</strong> Orbit / Rotate 3D Camera
@@ -53,7 +57,10 @@ export const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
           </section>
 
           <section className="help-section">
-            <h3>📱 WebXR Augmented Reality (Mobile Chrome)</h3>
+            <h3>
+              <Smartphone size={18} className="help-header-icon" />
+              <span>WebXR Augmented Reality (Mobile Chrome)</span>
+            </h3>
             <ul>
               <li>
                 Tap <strong>"Start AR"</strong> on compatible Android Chrome
@@ -71,7 +78,10 @@ export const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
           </section>
 
           <section className="help-section">
-            <h3>⌨️ Keyboard Shortcuts</h3>
+            <h3>
+              <Keyboard size={18} className="help-header-icon" />
+              <span>Keyboard Shortcuts</span>
+            </h3>
             <div className="shortcuts-grid">
               <span className="kbd">1</span> <span>Distance Mode</span>
               <span className="kbd">2</span> <span>Continuous Path Mode</span>

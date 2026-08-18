@@ -1,4 +1,5 @@
 import React from "react";
+import { Copy, BookmarkCheck } from "lucide-react";
 import {
   Point3D,
   MeasurementMode,
@@ -120,7 +121,8 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({
             disabled={points.length === 0}
             title="Copy value to clipboard"
           >
-            📋 Copy
+            <Copy size={14} />
+            <span>Copy</span>
           </button>
           <button
             className="btn btn-primary btn-sm"
@@ -130,7 +132,8 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({
             }
             title="Save to Measurement History"
           >
-            💾 Save
+            <BookmarkCheck size={14} />
+            <span>Save</span>
           </button>
         </div>
       </div>

@@ -1,14 +1,18 @@
 /**
- * Clean, High-Visibility 3D WebGL WebXR AR Ruler Engine
- * Generates 3D volumetric cylinder laser tubes, physical marker spheres,
- * and torus reticles for guaranteed thick, visible lines in AR space.
+ * Pure WebGL WebXR AR Ruler Engine with 3D Spatial Billboard Measurements
+ * Renders volumetric laser lines, 3D anchor spheres, and floating 3D text labels
+ * anchored directly in physical room space.
  */
 
-import { Point3D, distance3D } from "@plainoss/core";
+import {
+  Point3D,
+  distance3D,
+  formatDistance,
+  DistanceUnit,
+} from "@plainoss/core";
 
 export interface XREngineCallbacks {
-  onHitPoseChange: (pose: Point3D | null, liveDistance: number | null) => void;
-  onPointPlaced: (point: Point3D, currentPoints: Point3D[]) => void;
+  onPointPlaced: (point: Point3D, points: Point3D[]) => void;
   onSessionStarted: () => void;
   onSessionEnded: () => void;
 }
@@ -21,14 +25,23 @@ export class WebXREngine {
   private isXRActive: boolean = false;
   private callbacks: XREngineCallbacks;
 
-  // Shader program & buffers
-  private colorProgram!: WebGLProgram;
+  // Shaders & Buffers
+  private geometryProgram!: WebGLProgram;
+  private billboardProgram!: WebGLProgram;
   private vertexBuffer!: WebGLBuffer;
+  private quadBuffer!: WebGLBuffer;
+
+  // Text Texture for 3D In-AR Measurement Label
+  private textCanvas: HTMLCanvasElement;
+  private textCtx: CanvasRenderingContext2D;
+  private textTexture!: WebGLTexture;
+  private lastRenderedText: string = "";
 
   // Measurement State
   public points: Point3D[] = [];
   public reticlePosition: Point3D | null = null;
   public reticleMatrix: Float32Array | null = null;
+  public unit: DistanceUnit = "m";
 
   constructor(canvas: HTMLCanvasElement, callbacks: XREngineCallbacks) {
     this.callbacks = callbacks;
@@ -49,13 +62,26 @@ export class WebXREngine {
       throw new Error("WebGL not supported for WebXR");
     }
     this.gl = gl as WebGL2RenderingContext;
+
+    // Create offscreen text canvas for dynamic 3D spatial billboard textures
+    this.textCanvas = document.createElement("canvas");
+    this.textCanvas.width = 512;
+    this.textCanvas.height = 160;
+    const ctx = this.textCanvas.getContext("2d");
+    if (!ctx) {
+      throw new Error("2D context for text canvas failed");
+    }
+    this.textCtx = ctx;
+
     this.initShaders();
+    this.initTextTexture();
   }
 
   private initShaders(): void {
     const gl = this.gl;
 
-    const vsSource = `
+    // 1. Geometry Shader (for 3D cylinders, spheres, torus reticle)
+    const vsGeom = `
       attribute vec3 aPosition;
       uniform mat4 uProjectionMatrix;
       uniform mat4 uViewMatrix;
@@ -65,7 +91,7 @@ export class WebXREngine {
       }
     `;
 
-    const fsSource = `
+    const fsGeom = `
       precision mediump float;
       uniform vec4 uColor;
       void main() {
@@ -73,6 +99,48 @@ export class WebXREngine {
       }
     `;
 
+    this.geometryProgram = this.createProgram(vsGeom, fsGeom);
+    this.vertexBuffer = gl.createBuffer()!;
+
+    // 2. Camera-facing 3D Spatial Billboard Shader (for in-AR distance text)
+    const vsBillboard = `
+      attribute vec2 aCorner;
+      uniform mat4 uProjectionMatrix;
+      uniform mat4 uViewMatrix;
+      uniform vec3 uCenterPos;
+      uniform vec2 uSize;
+      varying vec2 vUv;
+      void main() {
+        vUv = (aCorner + 1.0) * 0.5;
+        // Transform center to camera space
+        vec4 camCenter = uViewMatrix * vec4(uCenterPos, 1.0);
+        // Expand quad facing camera
+        vec4 camPos = camCenter + vec4(aCorner.x * uSize.x * 0.5, aCorner.y * uSize.y * 0.5, 0.0, 0.0);
+        gl_Position = uProjectionMatrix * camPos;
+      }
+    `;
+
+    const fsBillboard = `
+      precision mediump float;
+      uniform sampler2D uTexture;
+      varying vec2 vUv;
+      void main() {
+        vec4 texColor = texture2D(uTexture, vUv);
+        gl_FragColor = texColor;
+      }
+    `;
+
+    this.billboardProgram = this.createProgram(vsBillboard, fsBillboard);
+    this.quadBuffer = gl.createBuffer()!;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.quadBuffer);
+    const quadVerts = new Float32Array([
+      -1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1,
+    ]);
+    gl.bufferData(gl.ARRAY_BUFFER, quadVerts, gl.STATIC_DRAW);
+  }
+
+  private createProgram(vsSource: string, fsSource: string): WebGLProgram {
+    const gl = this.gl;
     const vs = gl.createShader(gl.VERTEX_SHADER)!;
     gl.shaderSource(vs, vsSource);
     gl.compileShader(vs);
@@ -85,9 +153,69 @@ export class WebXREngine {
     gl.attachShader(program, vs);
     gl.attachShader(program, fs);
     gl.linkProgram(program);
+    return program;
+  }
 
-    this.colorProgram = program;
-    this.vertexBuffer = gl.createBuffer()!;
+  private initTextTexture(): void {
+    const gl = this.gl;
+    this.textTexture = gl.createTexture()!;
+    gl.bindTexture(gl.TEXTURE_2D, this.textTexture);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    this.updateTextTexture("0.00 m");
+  }
+
+  private updateTextTexture(text: string): void {
+    if (this.lastRenderedText === text) return;
+    this.lastRenderedText = text;
+
+    const ctx = this.textCtx;
+    const w = this.textCanvas.width;
+    const h = this.textCanvas.height;
+
+    ctx.clearRect(0, 0, w, h);
+
+    // Rounded badge background
+    const r = 32;
+    const pad = 16;
+    ctx.fillStyle = "rgba(15, 23, 42, 0.92)";
+    ctx.strokeStyle = "#38bdf8";
+    ctx.lineWidth = 8;
+
+    ctx.beginPath();
+    ctx.moveTo(pad + r, pad);
+    ctx.lineTo(w - pad - r, pad);
+    ctx.quadraticCurveTo(w - pad, pad, w - pad, pad + r);
+    ctx.lineTo(w - pad, h - pad - r);
+    ctx.quadraticCurveTo(w - pad, h - pad, w - pad - r, h - pad);
+    ctx.lineTo(pad + r, h - pad);
+    ctx.quadraticCurveTo(pad, h - pad, pad, h - pad - r);
+    ctx.lineTo(pad, pad + r);
+    ctx.quadraticCurveTo(pad, pad, pad + r, pad);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Measurement text
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 74px system-ui, -apple-system, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, w / 2, h / 2);
+
+    // Upload to WebGL
+    const gl = this.gl;
+    gl.bindTexture(gl.TEXTURE_2D, this.textTexture);
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.RGBA,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
+      this.textCanvas,
+    );
   }
 
   public static async isSupported(): Promise<boolean> {
@@ -119,20 +247,20 @@ export class WebXREngine {
 
     if (overlayElement) {
       try {
-        session = await xr.requestSession('immersive-ar', {
-          requiredFeatures: ['hit-test'],
-          optionalFeatures: ['dom-overlay', 'local-floor'],
+        session = await xr.requestSession("immersive-ar", {
+          requiredFeatures: ["hit-test"],
+          optionalFeatures: ["dom-overlay", "local-floor"],
           domOverlay: { root: overlayElement },
         });
       } catch (domErr) {
-        console.warn('dom-overlay not supported by XR runtime, requesting pure immersive-ar:', domErr);
+        console.warn("dom-overlay fallback:", domErr);
       }
     }
 
     if (!session) {
-      session = await xr.requestSession('immersive-ar', {
-        requiredFeatures: ['hit-test'],
-        optionalFeatures: ['local-floor'],
+      session = await xr.requestSession("immersive-ar", {
+        requiredFeatures: ["hit-test"],
+        optionalFeatures: ["local-floor"],
       });
     }
 
@@ -151,7 +279,7 @@ export class WebXREngine {
     this.refSpace = refSpace;
     this.hitTestSource = hitTestSource;
 
-    // Handle screen tap to drop points
+    // Handle screen tap (select event) to anchor point
     session.addEventListener("select", () => {
       if (this.reticlePosition) {
         const pt = { ...this.reticlePosition };
@@ -186,20 +314,13 @@ export class WebXREngine {
           const pos = pose.transform.position;
           this.reticlePosition = { x: pos.x, y: pos.y, z: pos.z };
           this.reticleMatrix = pose.transform.matrix;
-
-          let liveDist: number | null = null;
-          if (this.points.length === 1 && this.points[0]) {
-            liveDist = distance3D(this.points[0], this.reticlePosition);
-          }
-          this.callbacks.onHitPoseChange(this.reticlePosition, liveDist);
         }
       } else {
         this.reticlePosition = null;
         this.reticleMatrix = null;
-        this.callbacks.onHitPoseChange(null, null);
       }
 
-      // Render WebXR Scene
+      // Render WebXR scene into XRWebGLLayer framebuffer
       const pose = frame.getViewerPose(this.refSpace);
       if (pose) {
         const layer = session.renderState.baseLayer;
@@ -245,15 +366,22 @@ export class WebXREngine {
     viewMatrix: Float32Array,
   ): void {
     const gl = this.gl;
-    gl.useProgram(this.colorProgram);
     gl.enable(gl.DEPTH_TEST);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
-    const uProj = gl.getUniformLocation(this.colorProgram, "uProjectionMatrix");
-    const uView = gl.getUniformLocation(this.colorProgram, "uViewMatrix");
-    const uModel = gl.getUniformLocation(this.colorProgram, "uModelMatrix");
-    const uColor = gl.getUniformLocation(this.colorProgram, "uColor");
+    // ==========================================
+    // 1. RENDER 3D GEOMETRY (Torus Reticle, 3D Tubes, Spheres)
+    // ==========================================
+    gl.useProgram(this.geometryProgram);
+
+    const uProj = gl.getUniformLocation(
+      this.geometryProgram,
+      "uProjectionMatrix",
+    );
+    const uView = gl.getUniformLocation(this.geometryProgram, "uViewMatrix");
+    const uModel = gl.getUniformLocation(this.geometryProgram, "uModelMatrix");
+    const uColor = gl.getUniformLocation(this.geometryProgram, "uColor");
 
     gl.uniformMatrix4fv(uProj, false, projectionMatrix);
     gl.uniformMatrix4fv(uView, false, viewMatrix);
@@ -263,17 +391,17 @@ export class WebXREngine {
     ]);
     gl.uniformMatrix4fv(uModel, false, identity);
 
-    const posAttr = gl.getAttribLocation(this.colorProgram, "aPosition");
+    const posAttr = gl.getAttribLocation(this.geometryProgram, "aPosition");
     gl.enableVertexAttribArray(posAttr);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexBuffer);
     gl.vertexAttribPointer(posAttr, 3, gl.FLOAT, false, 0, 0);
 
-    // 1. Draw Surface Reticle as a Volumetric 3D Torus Ring
+    // 1a. Surface Reticle (Volumetric 3D Torus)
     if (this.reticleMatrix) {
       gl.uniformMatrix4fv(uModel, false, this.reticleMatrix);
       gl.uniform4f(uColor, 0.22, 0.74, 0.97, 0.95);
 
-      const torusVerts = this.createTorusMesh(0.08, 0.006, 24, 8);
+      const torusVerts = this.createTorusMesh(0.075, 0.005, 24, 8);
       gl.bufferData(
         gl.ARRAY_BUFFER,
         new Float32Array(torusVerts),
@@ -282,7 +410,7 @@ export class WebXREngine {
       gl.drawArrays(gl.TRIANGLES, 0, torusVerts.length / 3);
 
       // Center dot sphere
-      const dotVerts = this.createSphereMesh({ x: 0, y: 0, z: 0 }, 0.01, 8);
+      const dotVerts = this.createSphereMesh({ x: 0, y: 0, z: 0 }, 0.008, 8);
       gl.bufferData(
         gl.ARRAY_BUFFER,
         new Float32Array(dotVerts),
@@ -293,14 +421,17 @@ export class WebXREngine {
       gl.uniformMatrix4fv(uModel, false, identity);
     }
 
-    // 2. Draw Point 1 -> Reticle Live Guidance Line (Thick 3D Cylinder Tube)
+    let measurementMidpoint: Point3D | null = null;
+    let currentDistanceValue: number = 0;
+
+    // 1b. Live Guidance Line (Point 1 -> Reticle)
     if (this.points.length === 1 && this.points[0] && this.reticlePosition) {
-      gl.uniform4f(uColor, 0.22, 0.74, 0.97, 0.75); // Glowing Cyan Line
+      gl.uniform4f(uColor, 0.22, 0.74, 0.97, 0.8); // Glowing Cyan Tube
 
       const tubeVerts = this.createCylinderMesh(
         this.points[0],
         this.reticlePosition,
-        0.007,
+        0.006,
       );
       if (tubeVerts.length > 0) {
         gl.bufferData(
@@ -310,16 +441,23 @@ export class WebXREngine {
         );
         gl.drawArrays(gl.TRIANGLES, 0, tubeVerts.length / 3);
       }
+
+      currentDistanceValue = distance3D(this.points[0], this.reticlePosition);
+      measurementMidpoint = {
+        x: (this.points[0].x + this.reticlePosition.x) / 2,
+        y: (this.points[0].y + this.reticlePosition.y) / 2 + 0.04, // 4cm above line
+        z: (this.points[0].z + this.reticlePosition.z) / 2,
+      };
     }
 
-    // 3. Draw Completed Measured Line between Point 1 and Point 2 (Bold 3D Cylinder Tube)
+    // 1c. Locked Measurement Line (Point 1 -> Point 2)
     if (this.points.length >= 2 && this.points[0] && this.points[1]) {
-      gl.uniform4f(uColor, 0.23, 0.51, 0.96, 1.0); // Bold Blue Line
+      gl.uniform4f(uColor, 0.23, 0.51, 0.96, 1.0); // Bold Blue Tube
 
       const tubeVerts = this.createCylinderMesh(
         this.points[0],
         this.points[1],
-        0.01,
+        0.009,
       );
       if (tubeVerts.length > 0) {
         gl.bufferData(
@@ -329,15 +467,22 @@ export class WebXREngine {
         );
         gl.drawArrays(gl.TRIANGLES, 0, tubeVerts.length / 3);
       }
+
+      currentDistanceValue = distance3D(this.points[0], this.points[1]);
+      measurementMidpoint = {
+        x: (this.points[0].x + this.points[1].x) / 2,
+        y: (this.points[0].y + this.points[1].y) / 2 + 0.04,
+        z: (this.points[0].z + this.points[1].z) / 2,
+      };
     }
 
-    // 4. Draw Placed 3D Spheres for Anchors
+    // 1d. Placed 3D Spheres for Anchors
     if (this.points.length > 0) {
       gl.uniform4f(uColor, 0.98, 0.75, 0.18, 1.0); // Bright Gold Spheres
 
       const sphereVerts: number[] = [];
       for (const p of this.points) {
-        sphereVerts.push(...this.createSphereMesh(p, 0.02, 10));
+        sphereVerts.push(...this.createSphereMesh(p, 0.016, 10));
       }
       if (sphereVerts.length > 0) {
         gl.bufferData(
@@ -348,11 +493,55 @@ export class WebXREngine {
         gl.drawArrays(gl.TRIANGLES, 0, sphereVerts.length / 3);
       }
     }
+
+    // ==========================================
+    // 2. RENDER 3D IN-AR SPATIAL BILLBOARD LABEL
+    // ==========================================
+    if (measurementMidpoint && currentDistanceValue > 0.001) {
+      const formattedText = formatDistance(currentDistanceValue, this.unit, 2);
+      this.updateTextTexture(formattedText);
+
+      gl.useProgram(this.billboardProgram);
+
+      const uBillProj = gl.getUniformLocation(
+        this.billboardProgram,
+        "uProjectionMatrix",
+      );
+      const uBillView = gl.getUniformLocation(
+        this.billboardProgram,
+        "uViewMatrix",
+      );
+      const uBillCenter = gl.getUniformLocation(
+        this.billboardProgram,
+        "uCenterPos",
+      );
+      const uBillSize = gl.getUniformLocation(this.billboardProgram, "uSize");
+      const uBillTex = gl.getUniformLocation(this.billboardProgram, "uTexture");
+
+      gl.uniformMatrix4fv(uBillProj, false, projectionMatrix);
+      gl.uniformMatrix4fv(uBillView, false, viewMatrix);
+      gl.uniform3f(
+        uBillCenter,
+        measurementMidpoint.x,
+        measurementMidpoint.y,
+        measurementMidpoint.z,
+      );
+      // Billboard size: 18cm wide, 5.5cm tall in real physical world
+      gl.uniform2f(uBillSize, 0.18, 0.055);
+
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this.textTexture);
+      gl.uniform1i(uBillTex, 0);
+
+      const cornerAttr = gl.getAttribLocation(this.billboardProgram, "aCorner");
+      gl.enableVertexAttribArray(cornerAttr);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.quadBuffer);
+      gl.vertexAttribPointer(cornerAttr, 2, gl.FLOAT, false, 0, 0);
+
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+    }
   }
 
-  /**
-   * Generates a 3D cylinder tube between two endpoints for bold, resolution-independent 3D lines.
-   */
   private createCylinderMesh(
     p1: Point3D,
     p2: Point3D,
@@ -408,9 +597,6 @@ export class WebXREngine {
     return verts;
   }
 
-  /**
-   * Generates a 3D Sphere mesh at a given center.
-   */
   private createSphereMesh(
     center: Point3D,
     radius: number,
@@ -450,9 +636,6 @@ export class WebXREngine {
     };
   }
 
-  /**
-   * Generates a 3D Torus ring mesh for the surface reticle.
-   */
   private createTorusMesh(
     radius: number,
     tubeRadius: number,

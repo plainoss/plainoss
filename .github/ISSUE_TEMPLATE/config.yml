@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 PlainOSS Discussions
+    url: https://github.com/plainoss/plainoss/discussions
+    about: Ask questions, share ideas, and discuss PlainOSS tools with the community.
+  - name: 🛡️ Security Vulnerability Reporting
+    url: https://github.com/plainoss/plainoss/security/advisories/new
+    about: Privately report a security vulnerability.

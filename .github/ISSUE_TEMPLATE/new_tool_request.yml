@@ -1,0 +1,54 @@
+name: 💡 Propose a New Tool
+description: Suggest a new simple, bloat-free utility tool for PlainOSS.
+title: 'feat: propose <tool-name> utility'
+labels: ['enhancement', 'proposal']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        We welcome proposals for new lightweight, single-purpose utilities!
+        Remember: PlainOSS focuses on **simple, ad-free, bloat-free, offline-first tools**.
+
+  - type: input
+    id: tool-name
+    attributes:
+      label: Proposed Tool Name
+      placeholder: e.g. Sound Level Meter / QR Generator / Hash Calculator
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem & Use Case
+      description: What specific utility problem does this tool solve? Why is an existing online tool bloated or untrustworthy?
+    validations:
+      required: true
+
+  - type: textarea
+    id: engine-logic
+    attributes:
+      label: Core Mathematical / Algorithmic Logic
+      description: What pure functions or algorithms will live in `packages/core`?
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: targets
+    attributes:
+      label: Supported Platforms
+      options:
+        - label: Web Application (PWA)
+          required: true
+        - label: Mobile Application (Android / iOS)
+          required: false
+
+  - type: checkboxes
+    id: bloat-free-check
+    attributes:
+      label: PlainOSS Standards Check
+      options:
+        - label: This tool can function 100% offline and client-side (no backend API required).
+          required: true
+        - label: This tool requires zero telemetry or user tracking.
+          required: true

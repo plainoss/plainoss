@@ -38,9 +38,10 @@ export function App() {
   const [hoverPoint, setHoverPoint] = useState<Point3D | null>(null);
   const [snapToGrid, setSnapToGrid] = useState<boolean>(true);
 
-  // WebXR State (Strictly WebXR immersive-ar, zero fallbacks)
+  // WebXR State (Strictly WebXR immersive-ar)
   const [isARSupported, setIsARSupported] = useState<boolean>(false);
   const [isARActive, setIsARActive] = useState<boolean>(false);
+  const [liveARDistance, setLiveARDistance] = useState<number | null>(null);
   const xrEngineRef = useRef<WebXREngine | null>(null);
   const xrCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -174,6 +175,7 @@ export function App() {
   // Clear points
   const handleClear = useCallback(() => {
     setPoints([]);
+    setLiveARDistance(null);
     showToast("Measurement cleared", "info");
   }, [showToast]);
 
@@ -268,7 +270,7 @@ export function App() {
     }
   };
 
-  // Start / Stop True WebXR Session (No Fallback)
+  // Start / Stop True WebXR Session
   const handleToggleAR = async () => {
     if (!isARSupported) {
       showToast("WebXR AR is not supported on this browser/device.", "warning");
@@ -280,6 +282,7 @@ export function App() {
         await xrEngineRef.current.endAR();
       }
       setIsARActive(false);
+      setLiveARDistance(null);
       showToast("Exited WebXR AR mode", "info");
     } else {
       try {
@@ -288,25 +291,28 @@ export function App() {
         }
 
         const engine = new WebXREngine(xrCanvasRef.current, {
-          onHitPoseChange: (pose, _liveDist) => {
+          onHitPoseChange: (pose, liveDist) => {
             setHoverPoint(pose);
+            setLiveARDistance(liveDist);
           },
           onPointPlaced: (_p, currentPts) => {
             setPoints(currentPts);
             if (currentPts.length === 1) {
-              showToast("Point 1 placed. Aim and tap for Point 2", "info");
+              showToast("Point 1 anchored. Aim & tap for Point 2", "info");
             } else if (
               currentPts.length === 2 &&
               currentPts[0] &&
               currentPts[1]
             ) {
               const d = distance3D(currentPts[0], currentPts[1]);
+              setLiveARDistance(null);
               showToast(`Measured: ${formatDistance(d, unit, 2)}`, "success");
             }
           },
           onSessionStarted: () => {
             setIsARActive(true);
             setPoints([]);
+            setLiveARDistance(null);
             showToast(
               "WebXR AR active! Aim at surface & tap to place Point 1.",
               "success",
@@ -314,12 +320,15 @@ export function App() {
           },
           onSessionEnded: () => {
             setIsARActive(false);
+            setLiveARDistance(null);
             showToast("WebXR session ended", "info");
           },
         });
 
         xrEngineRef.current = engine;
-        await engine.startAR();
+        // Pass DOM Overlay element so React HUD floats on top of WebXR camera
+        const overlayRoot = document.getElementById("root") || document.body;
+        await engine.startAR(overlayRoot as HTMLElement);
       } catch (err: any) {
         console.error("WebXR start error:", err);
         showToast(err.message || "Could not start WebXR AR session", "warning");
@@ -575,9 +584,24 @@ export function App() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [hoverPoint, isARActive, handleAddPoint, handleUndo, handleClear]);
 
+  // Compute AR Display measurement value
+  let arDistanceDisplay = "0.00";
+  let arDistanceUnit = unit;
+  let arStatusText = "Aim at surface & tap to place Point 1";
+
+  if (points.length === 1 && liveARDistance !== null) {
+    arDistanceDisplay =
+      formatDistance(liveARDistance, unit, 2).split(" ")[0] ?? "0.00";
+    arStatusText = "Move device to Point 2 & tap to lock";
+  } else if (points.length >= 2 && points[0] && points[1]) {
+    const d = distance3D(points[0], points[1]);
+    arDistanceDisplay = formatDistance(d, unit, 2).split(" ")[0] ?? "0.00";
+    arStatusText = "Distance locked. Tap to start new measurement";
+  }
+
   return (
     <div className={`app-layout ${isARActive ? "ar-active" : ""}`}>
-      {/* Top Header */}
+      {/* Top Header (hidden or streamlined in AR mode) */}
       <Header
         theme={theme}
         onToggleTheme={toggleTheme}
@@ -617,47 +641,114 @@ export function App() {
           onContextMenu={(e) => e.preventDefault()}
         />
 
-        {/* Floating Measurement Overlay Cards */}
-        <div className="overlay-metrics-wrapper">
-          <MetricsPanel
-            points={points}
-            hoverPoint={hoverPoint}
-            mode={mode}
-            unit={unit}
-            angleUnit={angleUnit}
-            onCopy={handleCopy}
-            onSave={handleSaveMeasurement}
-          />
-        </div>
+        {/* WebXR AR Mode Floating HUD */}
+        {isARActive && (
+          <div className="ar-overlay-hud">
+            <div className="ar-measurement-card">
+              <div className="ar-card-header">
+                <span className="ar-pill">AR Ruler</span>
+                <span className="ar-point-badge">
+                  {points.length === 0
+                    ? "Point 1"
+                    : points.length === 1
+                      ? "Point 2"
+                      : "Done"}
+                </span>
+              </div>
 
-        {/* Floating Bottom Toolbar */}
-        <div className="overlay-toolbar-wrapper">
-          <Toolbar
-            mode={mode}
-            onSelectMode={setMode}
-            unit={unit}
-            onSelectUnit={setUnit}
-            pointCount={points.length}
-            onUndo={handleUndo}
-            onClear={handleClear}
-            snapToGrid={snapToGrid}
-            onToggleSnap={() => setSnapToGrid((p) => !p)}
-            onLoadPreset={handleLoadPreset}
-          />
-        </div>
+              <div className="ar-number-row">
+                <span className="ar-big-number">{arDistanceDisplay}</span>
+                <span className="ar-unit-symbol">{arDistanceUnit}</span>
+              </div>
 
-        {/* Interactive Helper Hint */}
-        <div className="canvas-hint" aria-hidden="true">
-          <span>
-            {isARActive
-              ? "📷 WebXR AR: Move camera to detect surfaces & tap screen to place points"
-              : !isARSupported
+              <div className="ar-instruction-text">{arStatusText}</div>
+
+              {/* Quick Unit Selector */}
+              <div className="ar-unit-selector">
+                {(["m", "cm", "in", "ft"] as DistanceUnit[]).map((u) => (
+                  <button
+                    key={u}
+                    className={`btn-ar-unit ${unit === u ? "active" : ""}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setUnit(u);
+                    }}
+                  >
+                    {u}
+                  </button>
+                ))}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="ar-card-actions">
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleClear();
+                  }}
+                >
+                  🔄 Reset
+                </button>
+                <button
+                  className="btn btn-danger btn-sm"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleToggleAR();
+                  }}
+                >
+                  ⏹ Exit AR
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Floating Measurement Overlay Cards (Sandbox Mode) */}
+        {!isARActive && (
+          <div className="overlay-metrics-wrapper">
+            <MetricsPanel
+              points={points}
+              hoverPoint={hoverPoint}
+              mode={mode}
+              unit={unit}
+              angleUnit={angleUnit}
+              onCopy={handleCopy}
+              onSave={handleSaveMeasurement}
+            />
+          </div>
+        )}
+
+        {/* Floating Bottom Toolbar (Sandbox Mode) */}
+        {!isARActive && (
+          <div className="overlay-toolbar-wrapper">
+            <Toolbar
+              mode={mode}
+              onSelectMode={setMode}
+              unit={unit}
+              onSelectUnit={setUnit}
+              pointCount={points.length}
+              onUndo={handleUndo}
+              onClear={handleClear}
+              snapToGrid={snapToGrid}
+              onToggleSnap={() => setSnapToGrid((p) => !p)}
+              onLoadPreset={handleLoadPreset}
+            />
+          </div>
+        )}
+
+        {/* Interactive Helper Hint (Sandbox Mode) */}
+        {!isARActive && (
+          <div className="canvas-hint" aria-hidden="true">
+            <span>
+              {!isARSupported
                 ? "ℹ️ WebXR AR requires an ARCore Android device or WebXR browser. 3D sandbox active."
                 : points.length === 0
                   ? '👆 Tap "Start AR" for physical measurement or click grid for 3D sandbox'
                   : "✨ Tap to place next point or drag to orbit"}
-          </span>
-        </div>
+            </span>
+          </div>
+        )}
       </main>
 
       {/* History Drawer */}

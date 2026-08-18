@@ -1,6 +1,7 @@
 /**
- * Clean, Bloat-Free WebGL WebXR Point-to-Point AR Ruler Engine
- * Implements W3C WebXR Immersive AR Hit-Testing with ARCore pose tracking.
+ * Clean, High-Visibility 3D WebGL WebXR AR Ruler Engine
+ * Generates 3D volumetric cylinder laser tubes, physical marker spheres,
+ * and torus reticles for guaranteed thick, visible lines in AR space.
  */
 
 import { Point3D, distance3D } from "@plainoss/core";
@@ -20,9 +21,9 @@ export class WebXREngine {
   private isXRActive: boolean = false;
   private callbacks: XREngineCallbacks;
 
-  // Shader programs & buffers
+  // Shader program & buffers
   private colorProgram!: WebGLProgram;
-  private positionBuffer!: WebGLBuffer;
+  private vertexBuffer!: WebGLBuffer;
 
   // Measurement State
   public points: Point3D[] = [];
@@ -61,19 +62,13 @@ export class WebXREngine {
       uniform mat4 uModelMatrix;
       void main() {
         gl_Position = uProjectionMatrix * uViewMatrix * uModelMatrix * vec4(aPosition, 1.0);
-        gl_PointSize = 20.0;
       }
     `;
 
     const fsSource = `
       precision mediump float;
       uniform vec4 uColor;
-      uniform bool uIsPoint;
       void main() {
-        if (uIsPoint) {
-          vec2 coord = gl_PointCoord - vec2(0.5);
-          if (length(coord) > 0.5) discard;
-        }
         gl_FragColor = uColor;
       }
     `;
@@ -92,7 +87,7 @@ export class WebXREngine {
     gl.linkProgram(program);
 
     this.colorProgram = program;
-    this.positionBuffer = gl.createBuffer()!;
+    this.vertexBuffer = gl.createBuffer()!;
   }
 
   public static async isSupported(): Promise<boolean> {
@@ -146,12 +141,11 @@ export class WebXREngine {
     this.refSpace = refSpace;
     this.hitTestSource = hitTestSource;
 
-    // Handle screen tap (select event) to anchor point
+    // Handle screen tap to drop points
     session.addEventListener("select", () => {
       if (this.reticlePosition) {
         const pt = { ...this.reticlePosition };
         if (this.points.length >= 2) {
-          // Reset on 3rd tap to start a new line measurement
           this.points = [pt];
         } else {
           this.points = [...this.points, pt];
@@ -183,7 +177,6 @@ export class WebXREngine {
           this.reticlePosition = { x: pos.x, y: pos.y, z: pos.z };
           this.reticleMatrix = pose.transform.matrix;
 
-          // Compute live distance from Point 1 to reticle
           let liveDist: number | null = null;
           if (this.points.length === 1 && this.points[0]) {
             liveDist = distance3D(this.points[0], this.reticlePosition);
@@ -196,7 +189,7 @@ export class WebXREngine {
         this.callbacks.onHitPoseChange(null, null);
       }
 
-      // Render WebXR scene into XRWebGLLayer framebuffer
+      // Render WebXR Scene
       const pose = frame.getViewerPose(this.refSpace);
       if (pose) {
         const layer = session.renderState.baseLayer;
@@ -251,7 +244,6 @@ export class WebXREngine {
     const uView = gl.getUniformLocation(this.colorProgram, "uViewMatrix");
     const uModel = gl.getUniformLocation(this.colorProgram, "uModelMatrix");
     const uColor = gl.getUniformLocation(this.colorProgram, "uColor");
-    const uIsPoint = gl.getUniformLocation(this.colorProgram, "uIsPoint");
 
     gl.uniformMatrix4fv(uProj, false, projectionMatrix);
     gl.uniformMatrix4fv(uView, false, viewMatrix);
@@ -263,79 +255,227 @@ export class WebXREngine {
 
     const posAttr = gl.getAttribLocation(this.colorProgram, "aPosition");
     gl.enableVertexAttribArray(posAttr);
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexBuffer);
     gl.vertexAttribPointer(posAttr, 3, gl.FLOAT, false, 0, 0);
 
-    // 1. Draw Surface Reticle Ring
+    // 1. Draw Surface Reticle as a Volumetric 3D Torus Ring
     if (this.reticleMatrix) {
       gl.uniformMatrix4fv(uModel, false, this.reticleMatrix);
-      gl.uniform1i(uIsPoint, 0);
       gl.uniform4f(uColor, 0.22, 0.74, 0.97, 0.95);
 
-      const ringVerts: number[] = [];
-      const segments = 32;
-      const radius = 0.08; // 8cm radius
-      for (let i = 0; i <= segments; i++) {
-        const theta = (i / segments) * Math.PI * 2;
-        ringVerts.push(Math.cos(theta) * radius, 0, Math.sin(theta) * radius);
-      }
+      const torusVerts = this.createTorusMesh(0.08, 0.006, 24, 8);
       gl.bufferData(
         gl.ARRAY_BUFFER,
-        new Float32Array(ringVerts),
+        new Float32Array(torusVerts),
         gl.DYNAMIC_DRAW,
       );
-      gl.drawArrays(gl.LINE_LOOP, 0, segments + 1);
+      gl.drawArrays(gl.TRIANGLES, 0, torusVerts.length / 3);
+
+      // Center dot sphere
+      const dotVerts = this.createSphereMesh({ x: 0, y: 0, z: 0 }, 0.01, 8);
+      gl.bufferData(
+        gl.ARRAY_BUFFER,
+        new Float32Array(dotVerts),
+        gl.DYNAMIC_DRAW,
+      );
+      gl.drawArrays(gl.TRIANGLES, 0, dotVerts.length / 3);
 
       gl.uniformMatrix4fv(uModel, false, identity);
     }
 
-    // 2. Draw Point 1 -> Reticle Live Guidance Line
+    // 2. Draw Point 1 -> Reticle Live Guidance Line (Thick 3D Cylinder Tube)
     if (this.points.length === 1 && this.points[0] && this.reticlePosition) {
-      gl.uniform1i(uIsPoint, 0);
-      gl.uniform4f(uColor, 0.22, 0.74, 0.97, 0.7);
+      gl.uniform4f(uColor, 0.22, 0.74, 0.97, 0.75); // Glowing Cyan Line
 
-      const p0 = this.points[0];
-      const pr = this.reticlePosition;
-      const liveLineVerts = [p0.x, p0.y, p0.z, pr.x, pr.y, pr.z];
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        new Float32Array(liveLineVerts),
-        gl.DYNAMIC_DRAW,
+      const tubeVerts = this.createCylinderMesh(
+        this.points[0],
+        this.reticlePosition,
+        0.007,
       );
-      gl.drawArrays(gl.LINES, 0, 2);
-    }
-
-    // 3. Draw Completed Measured Line between Point 1 and Point 2
-    if (this.points.length >= 2 && this.points[0] && this.points[1]) {
-      gl.uniform1i(uIsPoint, 0);
-      gl.uniform4f(uColor, 0.23, 0.51, 0.96, 1.0);
-
-      const p0 = this.points[0];
-      const p1 = this.points[1];
-      const lineVerts = [p0.x, p0.y, p0.z, p1.x, p1.y, p1.z];
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        new Float32Array(lineVerts),
-        gl.DYNAMIC_DRAW,
-      );
-      gl.drawArrays(gl.LINES, 0, 2);
-    }
-
-    // 4. Draw Placed Points
-    if (this.points.length > 0) {
-      gl.uniform1i(uIsPoint, 1);
-      gl.uniform4f(uColor, 0.98, 0.75, 0.18, 1.0); // Gold points
-
-      const pointVerts: number[] = [];
-      for (const p of this.points) {
-        pointVerts.push(p.x, p.y, p.z);
+      if (tubeVerts.length > 0) {
+        gl.bufferData(
+          gl.ARRAY_BUFFER,
+          new Float32Array(tubeVerts),
+          gl.DYNAMIC_DRAW,
+        );
+        gl.drawArrays(gl.TRIANGLES, 0, tubeVerts.length / 3);
       }
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        new Float32Array(pointVerts),
-        gl.DYNAMIC_DRAW,
-      );
-      gl.drawArrays(gl.POINTS, 0, this.points.length);
     }
+
+    // 3. Draw Completed Measured Line between Point 1 and Point 2 (Bold 3D Cylinder Tube)
+    if (this.points.length >= 2 && this.points[0] && this.points[1]) {
+      gl.uniform4f(uColor, 0.23, 0.51, 0.96, 1.0); // Bold Blue Line
+
+      const tubeVerts = this.createCylinderMesh(
+        this.points[0],
+        this.points[1],
+        0.01,
+      );
+      if (tubeVerts.length > 0) {
+        gl.bufferData(
+          gl.ARRAY_BUFFER,
+          new Float32Array(tubeVerts),
+          gl.DYNAMIC_DRAW,
+        );
+        gl.drawArrays(gl.TRIANGLES, 0, tubeVerts.length / 3);
+      }
+    }
+
+    // 4. Draw Placed 3D Spheres for Anchors
+    if (this.points.length > 0) {
+      gl.uniform4f(uColor, 0.98, 0.75, 0.18, 1.0); // Bright Gold Spheres
+
+      const sphereVerts: number[] = [];
+      for (const p of this.points) {
+        sphereVerts.push(...this.createSphereMesh(p, 0.02, 10));
+      }
+      if (sphereVerts.length > 0) {
+        gl.bufferData(
+          gl.ARRAY_BUFFER,
+          new Float32Array(sphereVerts),
+          gl.DYNAMIC_DRAW,
+        );
+        gl.drawArrays(gl.TRIANGLES, 0, sphereVerts.length / 3);
+      }
+    }
+  }
+
+  /**
+   * Generates a 3D cylinder tube between two endpoints for bold, resolution-independent 3D lines.
+   */
+  private createCylinderMesh(
+    p1: Point3D,
+    p2: Point3D,
+    radius: number,
+  ): number[] {
+    const dir = { x: p2.x - p1.x, y: p2.y - p1.y, z: p2.z - p1.z };
+    const len = Math.hypot(dir.x, dir.y, dir.z);
+    if (len < 0.001) return [];
+
+    const nd = { x: dir.x / len, y: dir.y / len, z: dir.z / len };
+    let up = { x: 0, y: 1, z: 0 };
+    if (Math.abs(nd.y) > 0.9) {
+      up = { x: 1, y: 0, z: 0 };
+    }
+
+    const rx = up.y * nd.z - up.z * nd.y;
+    const ry = up.z * nd.x - up.x * nd.z;
+    const rz = up.x * nd.y - up.y * nd.x;
+    const rLen = Math.hypot(rx, ry, rz) || 1;
+    const nr = { x: rx / rLen, y: ry / rLen, z: rz / rLen };
+
+    const ux = nd.y * nr.z - nd.z * nr.y;
+    const uy = nd.z * nr.x - nd.x * nr.z;
+    const uz = nd.x * nr.y - nd.y * nr.x;
+    const nu = { x: ux, y: uy, z: uz };
+
+    const segments = 8;
+    const verts: number[] = [];
+    const ring1: Point3D[] = [];
+    const ring2: Point3D[] = [];
+
+    for (let i = 0; i <= segments; i++) {
+      const angle = (i / segments) * Math.PI * 2;
+      const cos = Math.cos(angle) * radius;
+      const sin = Math.sin(angle) * radius;
+      const ox = nr.x * cos + nu.x * sin;
+      const oy = nr.y * cos + nu.y * sin;
+      const oz = nr.z * cos + nu.z * sin;
+      ring1.push({ x: p1.x + ox, y: p1.y + oy, z: p1.z + oz });
+      ring2.push({ x: p2.x + ox, y: p2.y + oy, z: p2.z + oz });
+    }
+
+    for (let i = 0; i < segments; i++) {
+      const a1 = ring1[i]!;
+      const a2 = ring1[i + 1]!;
+      const b1 = ring2[i]!;
+      const b2 = ring2[i + 1]!;
+
+      verts.push(a1.x, a1.y, a1.z, b1.x, b1.y, b1.z, a2.x, a2.y, a2.z);
+      verts.push(a2.x, a2.y, a2.z, b1.x, b1.y, b1.z, b2.x, b2.y, b2.z);
+    }
+
+    return verts;
+  }
+
+  /**
+   * Generates a 3D Sphere mesh at a given center.
+   */
+  private createSphereMesh(
+    center: Point3D,
+    radius: number,
+    segments: number = 8,
+  ): number[] {
+    const verts: number[] = [];
+    for (let lat = 0; lat < segments; lat++) {
+      const theta1 = (lat / segments) * Math.PI;
+      const theta2 = ((lat + 1) / segments) * Math.PI;
+
+      for (let lon = 0; lon < segments; lon++) {
+        const phi1 = (lon / segments) * Math.PI * 2;
+        const phi2 = ((lon + 1) / segments) * Math.PI * 2;
+
+        const p1 = this.spherePoint(center, radius, theta1, phi1);
+        const p2 = this.spherePoint(center, radius, theta1, phi2);
+        const p3 = this.spherePoint(center, radius, theta2, phi1);
+        const p4 = this.spherePoint(center, radius, theta2, phi2);
+
+        verts.push(p1.x, p1.y, p1.z, p3.x, p3.y, p3.z, p2.x, p2.y, p2.z);
+        verts.push(p2.x, p2.y, p2.z, p3.x, p3.y, p3.z, p4.x, p4.y, p4.z);
+      }
+    }
+    return verts;
+  }
+
+  private spherePoint(
+    center: Point3D,
+    radius: number,
+    theta: number,
+    phi: number,
+  ): Point3D {
+    return {
+      x: center.x + radius * Math.sin(theta) * Math.cos(phi),
+      y: center.y + radius * Math.cos(theta),
+      z: center.z + radius * Math.sin(theta) * Math.sin(phi),
+    };
+  }
+
+  /**
+   * Generates a 3D Torus ring mesh for the surface reticle.
+   */
+  private createTorusMesh(
+    radius: number,
+    tubeRadius: number,
+    radialSegments: number = 24,
+    tubularSegments: number = 8,
+  ): number[] {
+    const verts: number[] = [];
+
+    for (let j = 0; j < radialSegments; j++) {
+      const u1 = (j / radialSegments) * Math.PI * 2;
+      const u2 = ((j + 1) / radialSegments) * Math.PI * 2;
+
+      for (let i = 0; i < tubularSegments; i++) {
+        const v1 = (i / tubularSegments) * Math.PI * 2;
+        const v2 = ((i + 1) / tubularSegments) * Math.PI * 2;
+
+        const p1 = this.torusPoint(u1, v1, radius, tubeRadius);
+        const p2 = this.torusPoint(u2, v1, radius, tubeRadius);
+        const p3 = this.torusPoint(u1, v2, radius, tubeRadius);
+        const p4 = this.torusPoint(u2, v2, radius, tubeRadius);
+
+        verts.push(p1.x, p1.y, p1.z, p3.x, p3.y, p3.z, p2.x, p2.y, p2.z);
+        verts.push(p2.x, p2.y, p2.z, p3.x, p3.y, p3.z, p4.x, p4.y, p4.z);
+      }
+    }
+
+    return verts;
+  }
+
+  private torusPoint(u: number, v: number, r: number, tubeR: number): Point3D {
+    const x = (r + tubeR * Math.cos(v)) * Math.cos(u);
+    const y = tubeR * Math.sin(v);
+    const z = (r + tubeR * Math.cos(v)) * Math.sin(u);
+    return { x, y, z };
   }
 }

@@ -481,7 +481,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   gridOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -526,7 +526,7 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   pointsOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   pointMarker: {
     position: "absolute",
@@ -688,7 +688,7 @@ const styles = StyleSheet.create({
     fontSize: 24,
   },
   historyModalBackdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: "rgba(0, 0, 0, 0.8)",
     justifyContent: "flex-end",
     zIndex: 100,

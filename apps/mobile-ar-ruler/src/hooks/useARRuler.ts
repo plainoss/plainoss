@@ -123,7 +123,7 @@ export function useARRuler() {
     (newUnit: DistanceUnit) => {
       selectionHaptic();
       setUnit(newUnit);
-      showToast(`Unit: ${newUnit.toUpperCase()}`, "info");
+      showToast(`Unit: ${newUnit}`, "info");
     },
     [selectionHaptic, showToast],
   );

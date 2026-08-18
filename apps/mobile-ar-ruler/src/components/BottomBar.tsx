@@ -31,7 +31,7 @@ export function BottomBar({
         activeOpacity={0.7}
         accessibilityLabel="Select measurement unit"
       >
-        <Text style={styles.unitText}>{unit.toUpperCase()}</Text>
+        <Text style={styles.unitText}>{unit}</Text>
         <ChevronDown size={14} color={THEME.textSecondary} strokeWidth={2.5} />
       </TouchableOpacity>
 

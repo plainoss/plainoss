@@ -173,7 +173,6 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     color: THEME.textSecondary,
     width: 32,
-    textTransform: "uppercase",
   },
   optionSymbolSelected: {
     color: THEME.accentCyan,

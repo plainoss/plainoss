@@ -55,7 +55,10 @@ export const Header: React.FC<HeaderProps> = ({
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.historyButton, historyCount > 0 && styles.historyButtonWithData]}
+          style={[
+            styles.historyButton,
+            historyCount > 0 && styles.historyButtonWithData,
+          ]}
           onPress={onOpenHistory}
           accessibilityLabel="Open Saved Measurements History"
         >

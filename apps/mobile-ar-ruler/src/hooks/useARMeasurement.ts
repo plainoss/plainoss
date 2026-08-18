@@ -12,15 +12,26 @@ import {
   formatArea,
   formatAngle,
 } from "@plainoss/core";
-import { ExtendedMeasurementMode, MobileMeasurementRecord, DeviceOrientationState } from "../types/app";
-import { hapticImpactLight, hapticImpactMedium, hapticSuccess } from "../utils/haptics";
+import {
+  ExtendedMeasurementMode,
+  MobileMeasurementRecord,
+  DeviceOrientationState,
+} from "../types/app";
+import {
+  hapticImpactLight,
+  hapticImpactMedium,
+  hapticSuccess,
+} from "../utils/haptics";
 
 interface UseARMeasurementProps {
   orientation: DeviceOrientationState;
   hapticsEnabled?: boolean;
 }
 
-export function useARMeasurement({ orientation, hapticsEnabled = true }: UseARMeasurementProps) {
+export function useARMeasurement({
+  orientation,
+  hapticsEnabled = true,
+}: UseARMeasurementProps) {
   const [mode, setMode] = useState<ExtendedMeasurementMode>("distance");
   const [unit, setUnit] = useState<DistanceUnit>("m");
   const [angleUnit, setAngleUnit] = useState<AngleUnit>("deg");
@@ -34,7 +45,7 @@ export function useARMeasurement({ orientation, hapticsEnabled = true }: UseARMe
       setMode(newMode);
       setPoints([]);
     },
-    [hapticsEnabled]
+    [hapticsEnabled],
   );
 
   // Change unit
@@ -43,7 +54,7 @@ export function useARMeasurement({ orientation, hapticsEnabled = true }: UseARMe
       hapticImpactLight(hapticsEnabled);
       setUnit(newUnit);
     },
-    [hapticsEnabled]
+    [hapticsEnabled],
   );
 
   // Change angle unit
@@ -52,7 +63,7 @@ export function useARMeasurement({ orientation, hapticsEnabled = true }: UseARMe
       hapticImpactLight(hapticsEnabled);
       setAngleUnit(newAngleUnit);
     },
-    [hapticsEnabled]
+    [hapticsEnabled],
   );
 
   // Adjust depth
@@ -63,7 +74,7 @@ export function useARMeasurement({ orientation, hapticsEnabled = true }: UseARMe
         return Math.max(0.3, Math.min(15.0, Number(next.toFixed(2))));
       });
     },
-    []
+    [],
   );
 
   // Drop point at current reticle aim
@@ -74,7 +85,8 @@ export function useARMeasurement({ orientation, hapticsEnabled = true }: UseARMe
     // When aiming, target is placed straight along forward Z with slight distribution based on count for simulation
     const angleOffset = (points.length * 45 * Math.PI) / 180;
     const spreadX = Math.sin(angleOffset) * targetDistance * 0.35;
-    const spreadY = (points.length % 2 === 0 ? 0.1 : -0.1) * targetDistance * 0.3;
+    const spreadY =
+      (points.length % 2 === 0 ? 0.1 : -0.1) * targetDistance * 0.3;
 
     const newPoint: Point3D = {
       x: spreadX,
@@ -204,21 +216,23 @@ export function useARMeasurement({ orientation, hapticsEnabled = true }: UseARMe
   }, [mode, points, unit, angleUnit, orientation]);
 
   // Construct a record ready to be saved
-  const createCurrentRecord = useCallback((): MobileMeasurementRecord | null => {
-    if (!calculation.isReady && mode !== "level") return null;
-    hapticSuccess(hapticsEnabled);
+  const createCurrentRecord =
+    useCallback((): MobileMeasurementRecord | null => {
+      if (!calculation.isReady && mode !== "level") return null;
+      hapticSuccess(hapticsEnabled);
 
-    return {
-      id: Date.now().toString(36) + Math.random().toString(36).substring(2, 6),
-      timestamp: Date.now(),
-      mode,
-      value: calculation.numericVal,
-      unit: mode === "angle" ? angleUnit : mode === "level" ? "deg" : unit,
-      formatted: calculation.formattedText,
-      points: [...points],
-      secondaryMetrics: calculation.secondary,
-    };
-  }, [calculation, mode, angleUnit, unit, points, hapticsEnabled]);
+      return {
+        id:
+          Date.now().toString(36) + Math.random().toString(36).substring(2, 6),
+        timestamp: Date.now(),
+        mode,
+        value: calculation.numericVal,
+        unit: mode === "angle" ? angleUnit : mode === "level" ? "deg" : unit,
+        formatted: calculation.formattedText,
+        points: [...points],
+        secondaryMetrics: calculation.secondary,
+      };
+    }, [calculation, mode, angleUnit, unit, points, hapticsEnabled]);
 
   return {
     mode,

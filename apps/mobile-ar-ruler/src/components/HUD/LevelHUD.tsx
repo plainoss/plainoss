@@ -15,7 +15,9 @@ export const LevelHUD: React.FC<LevelHUDProps> = ({ orientation }) => {
 
   return (
     <View style={styles.container}>
-      <View style={[styles.dialContainer, isLevel && styles.dialContainerLevel]}>
+      <View
+        style={[styles.dialContainer, isLevel && styles.dialContainerLevel]}
+      >
         {/* Crosshair guide */}
         <View style={[styles.crossH, isLevel && styles.crossLevel]} />
         <View style={[styles.crossV, isLevel && styles.crossLevel]} />
@@ -39,7 +41,9 @@ export const LevelHUD: React.FC<LevelHUDProps> = ({ orientation }) => {
       <View style={styles.metricsRow}>
         <View style={styles.metricBlock}>
           <Text style={styles.metricLabel}>Roll (X)</Text>
-          <Text style={[styles.metricValue, isLevel && styles.metricValueLevel]}>
+          <Text
+            style={[styles.metricValue, isLevel && styles.metricValueLevel]}
+          >
             {roll > 0 ? `+${roll.toFixed(1)}°` : `${roll.toFixed(1)}°`}
           </Text>
         </View>
@@ -52,7 +56,9 @@ export const LevelHUD: React.FC<LevelHUDProps> = ({ orientation }) => {
 
         <View style={styles.metricBlock}>
           <Text style={styles.metricLabel}>Pitch (Y)</Text>
-          <Text style={[styles.metricValue, isLevel && styles.metricValueLevel]}>
+          <Text
+            style={[styles.metricValue, isLevel && styles.metricValueLevel]}
+          >
             {pitch > 0 ? `+${pitch.toFixed(1)}°` : `${pitch.toFixed(1)}°`}
           </Text>
         </View>

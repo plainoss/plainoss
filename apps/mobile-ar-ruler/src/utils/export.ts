@@ -15,26 +15,36 @@ export const formatRecordSummary = (rec: MobileMeasurementRecord): string => {
   return details;
 };
 
-export const exportRecordsToText = (records: MobileMeasurementRecord[]): string => {
+export const exportRecordsToText = (
+  records: MobileMeasurementRecord[],
+): string => {
   if (records.length === 0) return "No measurement records to export.";
   const header = "=== AR Ruler (PlainOSS) Saved Measurements ===\n";
-  const body = records.map((r, i) => `${i + 1}. ${formatRecordSummary(r)}`).join("\n");
+  const body = records
+    .map((r, i) => `${i + 1}. ${formatRecordSummary(r)}`)
+    .join("\n");
   return `${header}\n${body}\n\nGenerated on ${new Date().toLocaleString()}`;
 };
 
-export const exportRecordsToCSV = (records: MobileMeasurementRecord[]): string => {
-  const header = "ID,Mode,Value,Unit,Formatted,Timestamp,Date,PointsCount,Details\n";
+export const exportRecordsToCSV = (
+  records: MobileMeasurementRecord[],
+): string => {
+  const header =
+    "ID,Mode,Value,Unit,Formatted,Timestamp,Date,PointsCount,Details\n";
   const rows = records.map((r) => {
     const date = new Date(r.timestamp).toISOString();
-    const details = (r.secondaryMetrics?.perimeter ? `Perimeter: ${r.secondaryMetrics.perimeter}` : "")
-      .replace(/"/g, '""');
+    const details = (
+      r.secondaryMetrics?.perimeter
+        ? `Perimeter: ${r.secondaryMetrics.perimeter}`
+        : ""
+    ).replace(/"/g, '""');
     return `"${r.id}","${r.mode}","${r.value}","${r.unit}","${r.formatted}","${r.timestamp}","${date}","${r.points.length}","${details}"`;
   });
   return header + rows.join("\n");
 };
 
 export const copyRecordsToClipboard = async (
-  records: MobileMeasurementRecord[]
+  records: MobileMeasurementRecord[],
 ): Promise<boolean> => {
   try {
     const text = exportRecordsToText(records);
@@ -47,7 +57,7 @@ export const copyRecordsToClipboard = async (
 
 export const shareRecordsAsFile = async (
   records: MobileMeasurementRecord[],
-  format: "csv" | "json" = "csv"
+  format: "csv" | "json" = "csv",
 ): Promise<boolean> => {
   try {
     const isAvailable = await Sharing.isAvailableAsync();
@@ -59,9 +69,10 @@ export const shareRecordsAsFile = async (
     const filename = `ar-ruler-export-${timestamp}.${format}`;
     const fileUri = `${FileSystem.cacheDirectory}${filename}`;
 
-    const content = format === "json"
-      ? JSON.stringify(records, null, 2)
-      : exportRecordsToCSV(records);
+    const content =
+      format === "json"
+        ? JSON.stringify(records, null, 2)
+        : exportRecordsToCSV(records);
 
     await FileSystem.writeAsStringAsync(fileUri, content, {
       encoding: FileSystem.EncodingType.UTF8,
@@ -70,7 +81,10 @@ export const shareRecordsAsFile = async (
     await Sharing.shareAsync(fileUri, {
       mimeType: format === "json" ? "application/json" : "text/csv",
       dialogTitle: "Share AR Ruler Measurements",
-      UTI: format === "json" ? "public.json" : "public.comma-separated-values-text",
+      UTI:
+        format === "json"
+          ? "public.json"
+          : "public.comma-separated-values-text",
     });
 
     return true;

@@ -1,12 +1,7 @@
 import { Point3D, DistanceUnit, AngleUnit } from "@plainoss/core";
 
 export type ExtendedMeasurementMode =
-  | "distance"
-  | "path"
-  | "polygon"
-  | "angle"
-  | "height"
-  | "level";
+  "distance" | "path" | "polygon" | "angle" | "height" | "level";
 
 export interface MobileMeasurementRecord {
   id: string;

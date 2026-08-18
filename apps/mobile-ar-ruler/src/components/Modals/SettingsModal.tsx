@@ -28,16 +28,27 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onClose,
 }) => {
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      animationType="slide"
+      transparent
+      onRequestClose={onClose}
+    >
       <View style={styles.backdrop}>
         <View style={styles.sheetContainer}>
           {/* Header */}
           <View style={styles.header}>
             <View>
               <Text style={styles.title}>Preferences & Settings</Text>
-              <Text style={styles.subtitle}>Configure measurement defaults</Text>
+              <Text style={styles.subtitle}>
+                Configure measurement defaults
+              </Text>
             </View>
-            <TouchableOpacity onPress={onClose} style={styles.closeBtn} accessibilityLabel="Close Settings">
+            <TouchableOpacity
+              onPress={onClose}
+              style={styles.closeBtn}
+              accessibilityLabel="Close Settings"
+            >
               <Text style={styles.closeBtnText}>✕</Text>
             </TouchableOpacity>
           </View>
@@ -58,7 +69,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       style={[styles.pill, isActive && styles.pillActive]}
                       onPress={() => onUpdateSettings({ precision: p })}
                     >
-                      <Text style={[styles.pillText, isActive && styles.pillTextActive]}>
+                      <Text
+                        style={[
+                          styles.pillText,
+                          isActive && styles.pillTextActive,
+                        ]}
+                      >
                         {p} {p === 1 ? "dec" : "decs"}
                       </Text>
                     </TouchableOpacity>
@@ -82,7 +98,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       style={[styles.pill, isActive && styles.pillActive]}
                       onPress={() => onUpdateSettings({ defaultUnit: u })}
                     >
-                      <Text style={[styles.pillText, isActive && styles.pillTextActive]}>
+                      <Text
+                        style={[
+                          styles.pillText,
+                          isActive && styles.pillTextActive,
+                        ]}
+                      >
                         {u}
                       </Text>
                     </TouchableOpacity>
@@ -96,11 +117,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <View style={styles.toggleRow}>
                 <View style={styles.toggleTextContainer}>
                   <Text style={styles.toggleLabel}>Haptic Feedback</Text>
-                  <Text style={styles.toggleDescription}>Vibrate on point drop, save, and leveling snap</Text>
+                  <Text style={styles.toggleDescription}>
+                    Vibrate on point drop, save, and leveling snap
+                  </Text>
                 </View>
                 <Switch
                   value={settings.hapticsEnabled}
-                  onValueChange={(val) => onUpdateSettings({ hapticsEnabled: val })}
+                  onValueChange={(val) =>
+                    onUpdateSettings({ hapticsEnabled: val })
+                  }
                   trackColor={{ false: "#27272a", true: "#3b82f6" }}
                   thumbColor="#ffffff"
                 />
@@ -111,11 +136,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <View style={styles.toggleRow}>
                 <View style={styles.toggleTextContainer}>
                   <Text style={styles.toggleLabel}>Rule of Thirds Grid</Text>
-                  <Text style={styles.toggleDescription}>Display alignment grid over viewfinder</Text>
+                  <Text style={styles.toggleDescription}>
+                    Display alignment grid over viewfinder
+                  </Text>
                 </View>
                 <Switch
                   value={settings.gridEnabled}
-                  onValueChange={(val) => onUpdateSettings({ gridEnabled: val })}
+                  onValueChange={(val) =>
+                    onUpdateSettings({ gridEnabled: val })
+                  }
                   trackColor={{ false: "#27272a", true: "#3b82f6" }}
                   thumbColor="#ffffff"
                 />
@@ -126,8 +155,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             <View style={styles.aboutCard}>
               <Text style={styles.aboutTitle}>PlainOSS AR Ruler v0.1.0</Text>
               <Text style={styles.aboutText}>
-                Free, ad-free, and privacy-respecting spatial tools. All measurements are processed
-                locally on your device.
+                Free, ad-free, and privacy-respecting spatial tools. All
+                measurements are processed locally on your device.
               </Text>
             </View>
           </ScrollView>

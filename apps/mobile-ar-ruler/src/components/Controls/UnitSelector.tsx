@@ -1,5 +1,11 @@
 import React from "react";
-import { StyleSheet, View, Text, TouchableOpacity, ScrollView } from "react-native";
+import {
+  StyleSheet,
+  View,
+  Text,
+  TouchableOpacity,
+  ScrollView,
+} from "react-native";
 import { DistanceUnit, AngleUnit } from "@plainoss/core";
 import { ExtendedMeasurementMode } from "../../types/app";
 
@@ -51,7 +57,9 @@ export const UnitSelector: React.FC<UnitSelectorProps> = ({
                   onPress={() => onSelectAngleUnit(u.id)}
                   activeOpacity={0.7}
                 >
-                  <Text style={[styles.unitText, isActive && styles.unitTextActive]}>
+                  <Text
+                    style={[styles.unitText, isActive && styles.unitTextActive]}
+                  >
                     {u.label}
                   </Text>
                 </TouchableOpacity>
@@ -66,7 +74,9 @@ export const UnitSelector: React.FC<UnitSelectorProps> = ({
                   onPress={() => onSelectUnit(u.id)}
                   activeOpacity={0.7}
                 >
-                  <Text style={[styles.unitText, isActive && styles.unitTextActive]}>
+                  <Text
+                    style={[styles.unitText, isActive && styles.unitTextActive]}
+                  >
                     {u.id}
                   </Text>
                 </TouchableOpacity>

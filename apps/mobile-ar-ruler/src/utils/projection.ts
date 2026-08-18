@@ -15,10 +15,10 @@ export const project3DtoScreen = (
   p: Point3D,
   viewWidth: number,
   viewHeight: number,
-  cameraFov: number = 60 // degrees vertical FOV
+  cameraFov: number = 60, // degrees vertical FOV
 ): ProjectedPoint => {
   const fovRad = (cameraFov * Math.PI) / 180;
-  const focalLength = (viewHeight / 2) / Math.tan(fovRad / 2);
+  const focalLength = viewHeight / 2 / Math.tan(fovRad / 2);
 
   // Avoid divide by zero / points behind camera
   const z = Math.max(0.1, p.z);
@@ -49,6 +49,11 @@ export const pointsToSvgPath = (points: { x: number; y: number }[]): string => {
   if (points.length === 0) return "";
   const first = points[0];
   if (!first) return "";
-  const d = points.slice(1).reduce((acc, p) => `${acc} L ${p.x.toFixed(1)} ${p.y.toFixed(1)}`, `M ${first.x.toFixed(1)} ${first.y.toFixed(1)}`);
+  const d = points
+    .slice(1)
+    .reduce(
+      (acc, p) => `${acc} L ${p.x.toFixed(1)} ${p.y.toFixed(1)}`,
+      `M ${first.x.toFixed(1)} ${first.y.toFixed(1)}`,
+    );
   return `${d} Z`;
 };

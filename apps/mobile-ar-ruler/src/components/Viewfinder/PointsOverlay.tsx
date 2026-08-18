@@ -1,7 +1,12 @@
 import React from "react";
 import { StyleSheet, View, Text } from "react-native";
 import Svg, { Line, Polygon, Circle, Text as SvgText } from "react-native-svg";
-import { Point3D, DistanceUnit, distance3D, formatDistance } from "@plainoss/core";
+import {
+  Point3D,
+  DistanceUnit,
+  distance3D,
+  formatDistance,
+} from "@plainoss/core";
 import { ExtendedMeasurementMode } from "../../types/app";
 import { project3DtoScreen } from "../../utils/projection";
 
@@ -25,11 +30,17 @@ export const PointsOverlay: React.FC<PointsOverlayProps> = ({
   }
 
   // Project 3D points to 2D screen space
-  const projected = points.map((p) => project3DtoScreen(p, viewWidth, viewHeight));
+  const projected = points.map((p) =>
+    project3DtoScreen(p, viewWidth, viewHeight),
+  );
 
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="none">
-      <Svg width={viewWidth} height={viewHeight} style={StyleSheet.absoluteFill}>
+      <Svg
+        width={viewWidth}
+        height={viewHeight}
+        style={StyleSheet.absoluteFill}
+      >
         {/* Polygon surface fill in area mode */}
         {mode === "polygon" && projected.length >= 3 && (
           <Polygon
@@ -47,7 +58,10 @@ export const PointsOverlay: React.FC<PointsOverlayProps> = ({
           const prev = projected[idx - 1];
           if (!prev) return null;
 
-          const rawDist = points[idx] && points[idx - 1] ? distance3D(points[idx - 1]!, points[idx]!) : 0;
+          const rawDist =
+            points[idx] && points[idx - 1]
+              ? distance3D(points[idx - 1]!, points[idx]!)
+              : 0;
           const formattedSeg = formatDistance(rawDist, unit, 2);
           const midX = (prev.x + curr.x) / 2;
           const midY = (prev.y + curr.y) / 2;
@@ -79,17 +93,20 @@ export const PointsOverlay: React.FC<PointsOverlayProps> = ({
         })}
 
         {/* Closing line for polygon */}
-        {mode === "polygon" && projected.length >= 3 && projected[0] && projected[projected.length - 1] && (
-          <Line
-            x1={projected[projected.length - 1]!.x}
-            y1={projected[projected.length - 1]!.y}
-            x2={projected[0]!.x}
-            y2={projected[0]!.y}
-            stroke="#60a5fa"
-            strokeWidth="2"
-            strokeDasharray="3 3"
-          />
-        )}
+        {mode === "polygon" &&
+          projected.length >= 3 &&
+          projected[0] &&
+          projected[projected.length - 1] && (
+            <Line
+              x1={projected[projected.length - 1]!.x}
+              y1={projected[projected.length - 1]!.y}
+              x2={projected[0]!.x}
+              y2={projected[0]!.y}
+              stroke="#60a5fa"
+              strokeWidth="2"
+              strokeDasharray="3 3"
+            />
+          )}
 
         {/* Point Vertices */}
         {projected.map((p, idx) => {

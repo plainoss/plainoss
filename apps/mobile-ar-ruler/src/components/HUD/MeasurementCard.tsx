@@ -52,26 +52,40 @@ export const MeasurementCard: React.FC<MeasurementCardProps> = ({
           {secondaryMetrics.perimeter && (
             <View style={styles.secondaryItem}>
               <Text style={styles.secondaryLabel}>Perimeter:</Text>
-              <Text style={styles.secondaryValue}>{secondaryMetrics.perimeter}</Text>
+              <Text style={styles.secondaryValue}>
+                {secondaryMetrics.perimeter}
+              </Text>
             </View>
           )}
 
           {secondaryMetrics.deltaX && secondaryMetrics.deltaY && (
             <View style={styles.deltaRow}>
-              <Text style={styles.deltaItem}>ΔX: {secondaryMetrics.deltaX}</Text>
-              <Text style={styles.deltaItem}>ΔY: {secondaryMetrics.deltaY}</Text>
+              <Text style={styles.deltaItem}>
+                ΔX: {secondaryMetrics.deltaX}
+              </Text>
+              <Text style={styles.deltaItem}>
+                ΔY: {secondaryMetrics.deltaY}
+              </Text>
               {secondaryMetrics.deltaZ && (
-                <Text style={styles.deltaItem}>ΔZ: {secondaryMetrics.deltaZ}</Text>
+                <Text style={styles.deltaItem}>
+                  ΔZ: {secondaryMetrics.deltaZ}
+                </Text>
               )}
             </View>
           )}
 
-          {mode === "level" && secondaryMetrics.roll !== undefined && secondaryMetrics.pitch !== undefined && (
-            <View style={styles.deltaRow}>
-              <Text style={styles.deltaItem}>Roll: {secondaryMetrics.roll}°</Text>
-              <Text style={styles.deltaItem}>Pitch: {secondaryMetrics.pitch}°</Text>
-            </View>
-          )}
+          {mode === "level" &&
+            secondaryMetrics.roll !== undefined &&
+            secondaryMetrics.pitch !== undefined && (
+              <View style={styles.deltaRow}>
+                <Text style={styles.deltaItem}>
+                  Roll: {secondaryMetrics.roll}°
+                </Text>
+                <Text style={styles.deltaItem}>
+                  Pitch: {secondaryMetrics.pitch}°
+                </Text>
+              </View>
+            )}
         </View>
       )}
     </View>

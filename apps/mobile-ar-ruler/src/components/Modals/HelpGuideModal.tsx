@@ -45,16 +45,27 @@ export const HelpGuideModal: React.FC<HelpGuideModalProps> = ({
   onClose,
 }) => {
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      animationType="slide"
+      transparent
+      onRequestClose={onClose}
+    >
       <View style={styles.backdrop}>
         <View style={styles.sheetContainer}>
           {/* Header */}
           <View style={styles.header}>
             <View>
               <Text style={styles.title}>How to Measure with AR</Text>
-              <Text style={styles.subtitle}>Quick user guide & best practices</Text>
+              <Text style={styles.subtitle}>
+                Quick user guide & best practices
+              </Text>
             </View>
-            <TouchableOpacity onPress={onClose} style={styles.closeBtn} accessibilityLabel="Close Guide">
+            <TouchableOpacity
+              onPress={onClose}
+              style={styles.closeBtn}
+              accessibilityLabel="Close Guide"
+            >
               <Text style={styles.closeBtnText}>✕</Text>
             </TouchableOpacity>
           </View>
@@ -73,11 +84,14 @@ export const HelpGuideModal: React.FC<HelpGuideModalProps> = ({
             ))}
 
             <View style={styles.tipCard}>
-              <Text style={styles.tipTitle}>💡 Pro Tips for Maximum Accuracy</Text>
+              <Text style={styles.tipTitle}>
+                💡 Pro Tips for Maximum Accuracy
+              </Text>
               <Text style={styles.tipText}>
-                • Ensure good lighting or toggle the built-in torch (💡).{"\n"}
-                • For flat surfaces (tables, floors), keep the green level indicator active.{"\n"}
-                • Calibrate depth before dropping the first anchor point.
+                • Ensure good lighting or toggle the built-in torch (💡).{"\n"}•
+                For flat surfaces (tables, floors), keep the green level
+                indicator active.{"\n"}• Calibrate depth before dropping the
+                first anchor point.
               </Text>
             </View>
           </ScrollView>

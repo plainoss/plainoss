@@ -31,7 +31,7 @@ export function usePersistentHistory() {
     setHistory((prev) => {
       const updated = [record, ...prev];
       AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated)).catch((err) =>
-        console.error("Failed to persist record:", err)
+        console.error("Failed to persist record:", err),
       );
       return updated;
     });
@@ -41,7 +41,7 @@ export function usePersistentHistory() {
     setHistory((prev) => {
       const updated = prev.filter((r) => r.id !== id);
       AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated)).catch((err) =>
-        console.error("Failed to update AsyncStorage on delete:", err)
+        console.error("Failed to update AsyncStorage on delete:", err),
       );
       return updated;
     });

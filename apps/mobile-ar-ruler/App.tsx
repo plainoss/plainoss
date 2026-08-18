@@ -39,7 +39,8 @@ export default function App() {
   // Hardware and Sensor hooks
   const camera = useCameraPermission();
   const orientation = useDeviceSensors();
-  const { history, saveRecord, deleteRecord, clearHistory } = usePersistentHistory();
+  const { history, saveRecord, deleteRecord, clearHistory } =
+    usePersistentHistory();
 
   // AR Measurement state machine
   const measurement = useARMeasurement({
@@ -47,9 +48,12 @@ export default function App() {
     hapticsEnabled: settings.hapticsEnabled,
   });
 
-  const handleUpdateSettings = useCallback((newSettings: Partial<AppSettings>) => {
-    setSettings((prev) => ({ ...prev, ...newSettings }));
-  }, []);
+  const handleUpdateSettings = useCallback(
+    (newSettings: Partial<AppSettings>) => {
+      setSettings((prev) => ({ ...prev, ...newSettings }));
+    },
+    [],
+  );
 
   const handleSaveMeasurement = useCallback(async () => {
     const record = measurement.createCurrentRecord();
@@ -149,10 +153,7 @@ export default function App() {
         onClose={() => setShowSettings(false)}
       />
 
-      <HelpGuideModal
-        visible={showHelp}
-        onClose={() => setShowHelp(false)}
-      />
+      <HelpGuideModal visible={showHelp} onClose={() => setShowHelp(false)} />
     </SafeAreaView>
   );
 }

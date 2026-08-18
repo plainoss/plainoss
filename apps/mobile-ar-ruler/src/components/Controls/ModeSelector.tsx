@@ -1,5 +1,11 @@
 import React from "react";
-import { StyleSheet, View, Text, TouchableOpacity, ScrollView } from "react-native";
+import {
+  StyleSheet,
+  View,
+  Text,
+  TouchableOpacity,
+  ScrollView,
+} from "react-native";
 import { ExtendedMeasurementMode } from "../../types/app";
 
 interface ModeSelectorProps {
@@ -38,7 +44,9 @@ export const ModeSelector: React.FC<ModeSelectorProps> = ({
               accessibilityLabel={`Select ${m.label} Mode`}
             >
               <Text style={styles.modeIcon}>{m.icon}</Text>
-              <Text style={[styles.modeLabel, isActive && styles.modeLabelActive]}>
+              <Text
+                style={[styles.modeLabel, isActive && styles.modeLabelActive]}
+              >
                 {m.label}
               </Text>
             </TouchableOpacity>

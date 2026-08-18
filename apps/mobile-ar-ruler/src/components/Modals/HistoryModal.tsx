@@ -8,7 +8,10 @@ import {
   Modal,
   Alert,
 } from "react-native";
-import { MobileMeasurementRecord, ExtendedMeasurementMode } from "../../types/app";
+import {
+  MobileMeasurementRecord,
+  ExtendedMeasurementMode,
+} from "../../types/app";
 import { copyRecordsToClipboard, shareRecordsAsFile } from "../../utils/export";
 
 interface HistoryModalProps {
@@ -39,7 +42,8 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
   const [filter, setFilter] = useState<ExtendedMeasurementMode | "all">("all");
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
-  const filtered = filter === "all" ? history : history.filter((r) => r.mode === filter);
+  const filtered =
+    filter === "all" ? history : history.filter((r) => r.mode === filter);
 
   const showStatus = (msg: string) => {
     setStatusMessage(msg);
@@ -72,12 +76,17 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
           style: "destructive",
           onPress: onClearHistory,
         },
-      ]
+      ],
     );
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      animationType="slide"
+      transparent
+      onRequestClose={onClose}
+    >
       <View style={styles.backdrop}>
         <View style={styles.sheetContainer}>
           {/* Sheet Header */}
@@ -85,10 +94,15 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
             <View>
               <Text style={styles.title}>Saved Measurements</Text>
               <Text style={styles.subtitle}>
-                {history.length} {history.length === 1 ? "record" : "records"} recorded
+                {history.length} {history.length === 1 ? "record" : "records"}{" "}
+                recorded
               </Text>
             </View>
-            <TouchableOpacity onPress={onClose} style={styles.closeBtn} accessibilityLabel="Close History">
+            <TouchableOpacity
+              onPress={onClose}
+              style={styles.closeBtn}
+              accessibilityLabel="Close History"
+            >
               <Text style={styles.closeBtnText}>✕</Text>
             </TouchableOpacity>
           </View>
@@ -102,14 +116,26 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
 
           {/* Filter Carousel */}
           <View style={styles.filterRow}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterScroll}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.filterScroll}
+            >
               {FILTER_MODES.map((fm) => (
                 <TouchableOpacity
                   key={fm.id}
-                  style={[styles.filterPill, filter === fm.id && styles.filterPillActive]}
+                  style={[
+                    styles.filterPill,
+                    filter === fm.id && styles.filterPillActive,
+                  ]}
                   onPress={() => setFilter(fm.id)}
                 >
-                  <Text style={[styles.filterPillText, filter === fm.id && styles.filterPillTextActive]}>
+                  <Text
+                    style={[
+                      styles.filterPillText,
+                      filter === fm.id && styles.filterPillTextActive,
+                    ]}
+                  >
                     {fm.label}
                   </Text>
                 </TouchableOpacity>
@@ -122,7 +148,9 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
             {filtered.length === 0 ? (
               <View style={styles.emptyState}>
                 <Text style={styles.emptyIcon}>📐</Text>
-                <Text style={styles.emptyText}>No saved measurements found</Text>
+                <Text style={styles.emptyText}>
+                  No saved measurements found
+                </Text>
                 <Text style={styles.emptySubtext}>
                   Complete a measurement in the camera viewfinder and tap Save.
                 </Text>
@@ -132,11 +160,16 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
                 <View key={item.id} style={styles.recordCard}>
                   <View style={styles.recordHeader}>
                     <View style={styles.modeTag}>
-                      <Text style={styles.modeTagText}>{item.mode.toUpperCase()}</Text>
+                      <Text style={styles.modeTagText}>
+                        {item.mode.toUpperCase()}
+                      </Text>
                     </View>
                     <Text style={styles.recordDate}>
-                      {new Date(item.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} •{" "}
-                      {new Date(item.timestamp).toLocaleDateString()}
+                      {new Date(item.timestamp).toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}{" "}
+                      • {new Date(item.timestamp).toLocaleDateString()}
                     </Text>
                     <TouchableOpacity
                       onPress={() => onDeleteRecord(item.id)}
@@ -155,11 +188,13 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
                     </Text>
                   )}
 
-                  {item.secondaryMetrics?.deltaX && item.secondaryMetrics?.deltaY && (
-                    <Text style={styles.recordDetail}>
-                      ΔX: {item.secondaryMetrics.deltaX} | ΔY: {item.secondaryMetrics.deltaY}
-                    </Text>
-                  )}
+                  {item.secondaryMetrics?.deltaX &&
+                    item.secondaryMetrics?.deltaY && (
+                      <Text style={styles.recordDetail}>
+                        ΔX: {item.secondaryMetrics.deltaX} | ΔY:{" "}
+                        {item.secondaryMetrics.deltaY}
+                      </Text>
+                    )}
                 </View>
               ))
             )}
@@ -168,16 +203,28 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
           {/* Action Footer */}
           {history.length > 0 && (
             <View style={styles.footer}>
-              <TouchableOpacity style={styles.footerBtn} onPress={handleCopyClipboard}>
+              <TouchableOpacity
+                style={styles.footerBtn}
+                onPress={handleCopyClipboard}
+              >
                 <Text style={styles.footerBtnText}>📋 Copy</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.footerBtn} onPress={handleShareCSV}>
+              <TouchableOpacity
+                style={styles.footerBtn}
+                onPress={handleShareCSV}
+              >
                 <Text style={styles.footerBtnText}>📊 CSV</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.footerBtn} onPress={handleShareJSON}>
+              <TouchableOpacity
+                style={styles.footerBtn}
+                onPress={handleShareJSON}
+              >
                 <Text style={styles.footerBtnText}>📦 JSON</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.footerBtn, styles.footerBtnDanger]} onPress={handleConfirmClear}>
+              <TouchableOpacity
+                style={[styles.footerBtn, styles.footerBtnDanger]}
+                onPress={handleConfirmClear}
+              >
                 <Text style={styles.footerBtnTextDanger}>Clear All</Text>
               </TouchableOpacity>
             </View>

@@ -18,9 +18,7 @@
         "backgroundColor": "#0a0a0c"
       },
       "package": "app.plainoss.arruler",
-      "permissions": [
-        "CAMERA"
-      ]
+      "permissions": ["CAMERA"]
     },
     "plugins": [
       [

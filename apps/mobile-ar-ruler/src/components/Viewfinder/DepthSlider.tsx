@@ -59,7 +59,8 @@ export const DepthSlider: React.FC<DepthSliderProps> = ({
             <Text
               style={[
                 styles.presetBtnText,
-                Math.abs(targetDistance - p) < 0.15 && styles.presetBtnTextActive,
+                Math.abs(targetDistance - p) < 0.15 &&
+                  styles.presetBtnTextActive,
               ]}
             >
               {p >= 1 ? `${p}m` : `${p * 100}cm`}

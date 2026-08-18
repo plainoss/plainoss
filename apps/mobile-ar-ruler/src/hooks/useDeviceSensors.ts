@@ -29,8 +29,10 @@ export function useDeviceSensors(): DeviceOrientationState {
 
       // Level if phone is parallel to ground (roll near 0 and pitch near 0) or standing upright (pitch near -90 or 90)
       const isLevel =
-        (Math.abs(rollDeg) <= LEVEL_TOLERANCE_DEG && Math.abs(pitchDeg) <= LEVEL_TOLERANCE_DEG) ||
-        (Math.abs(rollDeg) <= LEVEL_TOLERANCE_DEG && Math.abs(Math.abs(pitchDeg) - 90) <= LEVEL_TOLERANCE_DEG);
+        (Math.abs(rollDeg) <= LEVEL_TOLERANCE_DEG &&
+          Math.abs(pitchDeg) <= LEVEL_TOLERANCE_DEG) ||
+        (Math.abs(rollDeg) <= LEVEL_TOLERANCE_DEG &&
+          Math.abs(Math.abs(pitchDeg) - 90) <= LEVEL_TOLERANCE_DEG);
 
       const isVertical = Math.abs(Math.abs(pitchDeg) - 90) <= 5.0;
 

@@ -1,5 +1,11 @@
 import React, { useState } from "react";
-import { StyleSheet, View, Text, TouchableOpacity, LayoutChangeEvent } from "react-native";
+import {
+  StyleSheet,
+  View,
+  Text,
+  TouchableOpacity,
+  LayoutChangeEvent,
+} from "react-native";
 import { CameraView, CameraType } from "expo-camera";
 import { Point3D, DistanceUnit } from "@plainoss/core";
 import { ExtendedMeasurementMode } from "../../types/app";
@@ -38,7 +44,10 @@ export const CameraViewfinder: React.FC<CameraViewfinderProps> = ({
   isVertical,
   gridEnabled,
 }) => {
-  const [dimensions, setDimensions] = useState<{ width: number; height: number }>({
+  const [dimensions, setDimensions] = useState<{
+    width: number;
+    height: number;
+  }>({
     width: 0,
     height: 0,
   });
@@ -68,7 +77,9 @@ export const CameraViewfinder: React.FC<CameraViewfinderProps> = ({
 
           {/* Camera Access prompt pill */}
           <View style={styles.permissionPill}>
-            <Text style={styles.permissionPillText}>📷 Viewfinder Simulator</Text>
+            <Text style={styles.permissionPillText}>
+              📷 Viewfinder Simulator
+            </Text>
             {canRequest && (
               <TouchableOpacity
                 style={styles.permissionBtn}

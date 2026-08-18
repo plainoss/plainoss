@@ -45,10 +45,14 @@ export const ActionToolbar: React.FC<ActionToolbarProps> = ({
         style={styles.mainBtn}
         onPress={isLevel ? onSave : onDropPoint}
         activeOpacity={0.8}
-        accessibilityLabel={isLevel ? "Save Level Reading" : "Drop Measurement Point"}
+        accessibilityLabel={
+          isLevel ? "Save Level Reading" : "Drop Measurement Point"
+        }
       >
         <View style={styles.mainBtnOuterRing}>
-          <View style={[styles.mainBtnInner, isLevel && styles.mainBtnInnerLevel]}>
+          <View
+            style={[styles.mainBtnInner, isLevel && styles.mainBtnInnerLevel]}
+          >
             <Text style={styles.mainBtnIcon}>{isLevel ? "💾" : "📍"}</Text>
           </View>
         </View>
@@ -59,16 +63,17 @@ export const ActionToolbar: React.FC<ActionToolbarProps> = ({
         style={[
           styles.sideBtn,
           isReadyToSave && !isLevel && styles.sideBtnSave,
-          pointsCount === 0 && !isLevel && !isReadyToSave && styles.sideBtnDisabled,
+          pointsCount === 0 &&
+            !isLevel &&
+            !isReadyToSave &&
+            styles.sideBtnDisabled,
         ]}
         onPress={isReadyToSave ? onSave : onClear}
         disabled={pointsCount === 0 && !isReadyToSave && !isLevel}
         activeOpacity={0.7}
         accessibilityLabel={isReadyToSave ? "Save Measurement" : "Clear Points"}
       >
-        <Text style={styles.sideBtnIcon}>
-          {isReadyToSave ? "💾" : "🗑️"}
-        </Text>
+        <Text style={styles.sideBtnIcon}>{isReadyToSave ? "💾" : "🗑️"}</Text>
         <Text
           style={[
             styles.sideBtnText,

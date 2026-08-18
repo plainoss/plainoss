@@ -24,7 +24,13 @@ export const SpatialReticle: React.FC<SpatialReticleProps> = ({
       <View style={[styles.crosshairV, isLevel && styles.crosshairLevel]} />
 
       {/* Target reticle outer circle */}
-      <View style={[styles.ring, isLevel && styles.ringLevel, isVertical && styles.ringVertical]} />
+      <View
+        style={[
+          styles.ring,
+          isLevel && styles.ringLevel,
+          isVertical && styles.ringVertical,
+        ]}
+      />
 
       {/* Target reticle center dot */}
       <View style={[styles.dot, isLevel && styles.dotLevel]} />
@@ -32,7 +38,8 @@ export const SpatialReticle: React.FC<SpatialReticleProps> = ({
       {/* Depth distance badge */}
       <View style={[styles.badge, isLevel && styles.badgeLevel]}>
         <Text style={styles.badgeText}>
-          {isLevel ? "🎯 LEVEL • " : ""}{formattedDist}
+          {isLevel ? "🎯 LEVEL • " : ""}
+          {formattedDist}
         </Text>
       </View>
     </View>

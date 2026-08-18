@@ -1,14 +1,13 @@
 /**
- * WebGL WebXR AR Engine & 3D Measurement System
- * Provides true WebXR immersive-ar hit-testing with ARCore hardware pose matrices,
- * and an interactive 3D WebGL orbit canvas for desktop/non-XR devices.
+ * Clean, Bloat-Free WebGL WebXR Point-to-Point AR Ruler Engine
+ * Implements W3C WebXR Immersive AR Hit-Testing with ARCore pose tracking.
  */
 
-import { Point3D } from "@plainoss/core";
+import { Point3D, distance3D } from "@plainoss/core";
 
 export interface XREngineCallbacks {
-  onHitPoseChange: (pose: Point3D | null) => void;
-  onPointPlaced: (point: Point3D) => void;
+  onHitPoseChange: (pose: Point3D | null, liveDistance: number | null) => void;
+  onPointPlaced: (point: Point3D, currentPoints: Point3D[]) => void;
   onSessionStarted: () => void;
   onSessionEnded: () => void;
 }
@@ -21,14 +20,14 @@ export class WebXREngine {
   private isXRActive: boolean = false;
   private callbacks: XREngineCallbacks;
 
-  // Shader programs
+  // Shader programs & buffers
   private colorProgram!: WebGLProgram;
   private positionBuffer!: WebGLBuffer;
 
-  // Active reticle & measurement points in 3D world
+  // Measurement State
+  public points: Point3D[] = [];
   public reticlePosition: Point3D | null = null;
   public reticleMatrix: Float32Array | null = null;
-  public points: Point3D[] = [];
 
   constructor(canvas: HTMLCanvasElement, callbacks: XREngineCallbacks) {
     this.callbacks = callbacks;
@@ -46,7 +45,7 @@ export class WebXREngine {
       });
 
     if (!gl) {
-      throw new Error("WebGL not supported");
+      throw new Error("WebGL not supported for WebXR");
     }
     this.gl = gl as WebGL2RenderingContext;
     this.initShaders();
@@ -62,7 +61,7 @@ export class WebXREngine {
       uniform mat4 uModelMatrix;
       void main() {
         gl_Position = uProjectionMatrix * uViewMatrix * uModelMatrix * vec4(aPosition, 1.0);
-        gl_PointSize = 16.0;
+        gl_PointSize = 20.0;
       }
     `;
 
@@ -114,10 +113,9 @@ export class WebXREngine {
 
     const xr = (navigator as any).xr;
     if (!xr) {
-      throw new Error("WebXR API not available");
+      throw new Error("WebXR API not available in this browser");
     }
 
-    // Make WebGL context XR compatible
     if ("makeXRCompatible" in this.gl) {
       await (this.gl as any).makeXRCompatible();
     }
@@ -148,10 +146,17 @@ export class WebXREngine {
     this.refSpace = refSpace;
     this.hitTestSource = hitTestSource;
 
-    // Listen for select (tap on screen) to drop points
+    // Handle screen tap (select event) to anchor point
     session.addEventListener("select", () => {
       if (this.reticlePosition) {
-        this.callbacks.onPointPlaced({ ...this.reticlePosition });
+        const pt = { ...this.reticlePosition };
+        if (this.points.length >= 2) {
+          // Reset on 3rd tap to start a new line measurement
+          this.points = [pt];
+        } else {
+          this.points = [...this.points, pt];
+        }
+        this.callbacks.onPointPlaced(pt, this.points);
       }
     });
 
@@ -177,15 +182,21 @@ export class WebXREngine {
           const pos = pose.transform.position;
           this.reticlePosition = { x: pos.x, y: pos.y, z: pos.z };
           this.reticleMatrix = pose.transform.matrix;
-          this.callbacks.onHitPoseChange(this.reticlePosition);
+
+          // Compute live distance from Point 1 to reticle
+          let liveDist: number | null = null;
+          if (this.points.length === 1 && this.points[0]) {
+            liveDist = distance3D(this.points[0], this.reticlePosition);
+          }
+          this.callbacks.onHitPoseChange(this.reticlePosition, liveDist);
         }
       } else {
         this.reticlePosition = null;
         this.reticleMatrix = null;
-        this.callbacks.onHitPoseChange(null);
+        this.callbacks.onHitPoseChange(null, null);
       }
 
-      // Render WebXR Scene
+      // Render WebXR scene into XRWebGLLayer framebuffer
       const pose = frame.getViewerPose(this.refSpace);
       if (pose) {
         const layer = session.renderState.baseLayer;
@@ -215,7 +226,7 @@ export class WebXREngine {
       try {
         await this.session.end();
       } catch {
-        // Ignore end errors
+        // Ignore session end errors
       }
       this.session = null;
       this.isXRActive = false;
@@ -255,16 +266,15 @@ export class WebXREngine {
     gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
     gl.vertexAttribPointer(posAttr, 3, gl.FLOAT, false, 0, 0);
 
-    // 1. Draw Reticle if available
+    // 1. Draw Surface Reticle Ring
     if (this.reticleMatrix) {
       gl.uniformMatrix4fv(uModel, false, this.reticleMatrix);
       gl.uniform1i(uIsPoint, 0);
-      gl.uniform4f(uColor, 0.22, 0.74, 0.97, 0.9);
+      gl.uniform4f(uColor, 0.22, 0.74, 0.97, 0.95);
 
-      // Ring vertices
       const ringVerts: number[] = [];
       const segments = 32;
-      const radius = 0.12; // 12cm radius
+      const radius = 0.08; // 8cm radius
       for (let i = 0; i <= segments; i++) {
         const theta = (i / segments) * Math.PI * 2;
         ringVerts.push(Math.cos(theta) * radius, 0, Math.sin(theta) * radius);
@@ -279,28 +289,42 @@ export class WebXREngine {
       gl.uniformMatrix4fv(uModel, false, identity);
     }
 
-    // 2. Draw Connecting Lines between Placed Points
-    if (this.points.length >= 2) {
+    // 2. Draw Point 1 -> Reticle Live Guidance Line
+    if (this.points.length === 1 && this.points[0] && this.reticlePosition) {
+      gl.uniform1i(uIsPoint, 0);
+      gl.uniform4f(uColor, 0.22, 0.74, 0.97, 0.7);
+
+      const p0 = this.points[0];
+      const pr = this.reticlePosition;
+      const liveLineVerts = [p0.x, p0.y, p0.z, pr.x, pr.y, pr.z];
+      gl.bufferData(
+        gl.ARRAY_BUFFER,
+        new Float32Array(liveLineVerts),
+        gl.DYNAMIC_DRAW,
+      );
+      gl.drawArrays(gl.LINES, 0, 2);
+    }
+
+    // 3. Draw Completed Measured Line between Point 1 and Point 2
+    if (this.points.length >= 2 && this.points[0] && this.points[1]) {
       gl.uniform1i(uIsPoint, 0);
       gl.uniform4f(uColor, 0.23, 0.51, 0.96, 1.0);
 
-      const lineVerts: number[] = [];
-      for (const p of this.points) {
-        lineVerts.push(p.x, p.y, p.z);
-      }
+      const p0 = this.points[0];
+      const p1 = this.points[1];
+      const lineVerts = [p0.x, p0.y, p0.z, p1.x, p1.y, p1.z];
       gl.bufferData(
         gl.ARRAY_BUFFER,
         new Float32Array(lineVerts),
         gl.DYNAMIC_DRAW,
       );
-      gl.lineWidth(4.0);
-      gl.drawArrays(gl.LINE_STRIP, 0, this.points.length);
+      gl.drawArrays(gl.LINES, 0, 2);
     }
 
-    // 3. Draw Points as 3D Markers
+    // 4. Draw Placed Points
     if (this.points.length > 0) {
       gl.uniform1i(uIsPoint, 1);
-      gl.uniform4f(uColor, 0.38, 0.74, 0.97, 1.0);
+      gl.uniform4f(uColor, 0.98, 0.75, 0.18, 1.0); // Gold points
 
       const pointVerts: number[] = [];
       for (const p of this.points) {

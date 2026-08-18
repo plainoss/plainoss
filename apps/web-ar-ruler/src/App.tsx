@@ -288,17 +288,27 @@ export function App() {
         }
 
         const engine = new WebXREngine(xrCanvasRef.current, {
-          onHitPoseChange: (pose) => {
+          onHitPoseChange: (pose, _liveDist) => {
             setHoverPoint(pose);
           },
-          onPointPlaced: (p) => {
-            handleAddPoint(p);
-            showToast("Placed AR anchor point on surface", "info");
+          onPointPlaced: (_p, currentPts) => {
+            setPoints(currentPts);
+            if (currentPts.length === 1) {
+              showToast("Point 1 placed. Aim and tap for Point 2", "info");
+            } else if (
+              currentPts.length === 2 &&
+              currentPts[0] &&
+              currentPts[1]
+            ) {
+              const d = distance3D(currentPts[0], currentPts[1]);
+              showToast(`Measured: ${formatDistance(d, unit, 2)}`, "success");
+            }
           },
           onSessionStarted: () => {
             setIsARActive(true);
+            setPoints([]);
             showToast(
-              "WebXR AR session active! Tap physical surfaces to place points.",
+              "WebXR AR active! Aim at surface & tap to place Point 1.",
               "success",
             );
           },
@@ -603,19 +613,6 @@ export function App() {
           onTouchCancel={() => {
             isDraggingRef.current = false;
             initialPinchDistRef.current = null;
-          }}
-          onClick={(e) => {
-            if (isARActive) return;
-            const renderer = rendererRef.current;
-            if (!renderer || !canvasRef.current) return;
-            const rect = canvasRef.current.getBoundingClientRect();
-            const ground = renderer.unprojectGround(
-              e.clientX - rect.left,
-              e.clientY - rect.top,
-            );
-            if (ground) {
-              handleAddPoint(ground);
-            }
           }}
           onContextMenu={(e) => e.preventDefault()}
         />

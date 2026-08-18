@@ -3,8 +3,11 @@ name: Build & Release Mobile Apps
 on:
   push:
     tags:
-      - 'mobile-*'
+      - "mobile-*"
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build-android:
@@ -27,8 +30,22 @@ jobs:
       - name: Setup Java
         uses: actions/setup-java@v5
         with:
-          distribution: 'temurin'
-          java-version: '17'
+          distribution: "temurin"
+          java-version: "21"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Build Android APK
+        working-directory: apps/mobile-ar-ruler/android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-ar-ruler-apk
+          path: apps/mobile-ar-ruler/android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error

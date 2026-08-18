@@ -115,17 +115,27 @@ export class WebXREngine {
       await (this.gl as any).makeXRCompatible();
     }
 
-    const sessionInit: any = {
-      requiredFeatures: ["hit-test"],
-      optionalFeatures: ["dom-overlay", "local-floor"],
-    };
+    let session: any = null;
 
     if (overlayElement) {
-      sessionInit.optionalFeatures.push("dom-overlay");
-      sessionInit.domOverlay = { root: overlayElement };
+      try {
+        session = await xr.requestSession('immersive-ar', {
+          requiredFeatures: ['hit-test'],
+          optionalFeatures: ['dom-overlay', 'local-floor'],
+          domOverlay: { root: overlayElement },
+        });
+      } catch (domErr) {
+        console.warn('dom-overlay not supported by XR runtime, requesting pure immersive-ar:', domErr);
+      }
     }
 
-    const session = await xr.requestSession("immersive-ar", sessionInit);
+    if (!session) {
+      session = await xr.requestSession('immersive-ar', {
+        requiredFeatures: ['hit-test'],
+        optionalFeatures: ['local-floor'],
+      });
+    }
+
     this.session = session;
     this.isXRActive = true;
 

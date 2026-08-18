@@ -40,6 +40,13 @@ export class WebXREngine {
   private quadBuffer!: WebGLBuffer;
   private pointCloudBuffer!: WebGLBuffer;
 
+  // Static Pre-computed Reticle Geometries (Zero allocation per frame)
+  private cachedTorusVerts!: Float32Array;
+  private cachedDotVerts!: Float32Array;
+
+  // Reusable Array Buffer for Surface Grid Dots (Prevents GC thrashing at 60-90 FPS)
+  private roomGridBuffer: Float32Array = new Float32Array(8192);
+
   // Text Texture for 3D In-AR Measurement Label
   private textCanvas: HTMLCanvasElement;
   private textCtx: CanvasRenderingContext2D;
@@ -185,12 +192,25 @@ export class WebXREngine {
 
     this.pointCloudProgram = this.createProgram(vsPointCloud, fsPointCloud);
     this.pointCloudBuffer = gl.createBuffer()!;
+
+    // Pre-compute static placement reticle ring (4,032 floats) and targeting dot (1,152 floats)
+    // Avoids thousands of Math.sin/cos calls and array allocations every frame
+    this.cachedTorusVerts = new Float32Array(
+      this.createTorusMesh(0.06, 0.0035, 28, 8),
+    );
+    this.cachedDotVerts = new Float32Array(
+      this.createSphereMesh({ x: 0, y: 0, z: 0 }, 0.006, 8),
+    );
   }
 
   /**
    * Generates a high-visibility room-scale planar grid of light dots across the entire detected physical floor.
+   * Uses a pre-allocated reusable Float32Array buffer to eliminate GC allocations in the render loop.
    */
-  private generateRoomPlaneGrid(timeSec: number, camPos: Point3D): number[] {
+  private generateRoomPlaneGrid(
+    timeSec: number,
+    camPos: Point3D,
+  ): { buffer: Float32Array; count: number } {
     const groundY =
       this.reticlePosition !== null
         ? this.reticlePosition.y
@@ -198,13 +218,21 @@ export class WebXREngine {
           ? this.detectedGroundY
           : camPos.y - 0.65;
 
-    const dots: number[] = [];
     const spacing = 0.15; // 15cm grid pitch
     const maxRadius = 3.2; // 3.2m radius
 
     const snapX = Math.round(camPos.x / spacing) * spacing;
     const snapZ = Math.round(camPos.z / spacing) * spacing;
     const steps = Math.floor(maxRadius / spacing);
+
+    // Expand buffer if grid dimensions exceed default capacity
+    const neededCapacity = (2 * steps + 1) * (2 * steps + 1) * 4;
+    if (this.roomGridBuffer.length < neededCapacity) {
+      this.roomGridBuffer = new Float32Array(neededCapacity);
+    }
+
+    let offset = 0;
+    const buf = this.roomGridBuffer;
 
     for (let ix = -steps; ix <= steps; ix++) {
       for (let iz = -steps; iz <= steps; iz++) {
@@ -224,11 +252,14 @@ export class WebXREngine {
 
         if (alpha < 0.04) continue;
 
-        dots.push(wx, groundY, wz, alpha);
+        buf[offset++] = wx;
+        buf[offset++] = groundY;
+        buf[offset++] = wz;
+        buf[offset++] = alpha;
       }
     }
 
-    return dots;
+    return { buffer: buf, count: offset };
   }
 
   private createProgram(vsSource: string, fsSource: string): WebGLProgram {
@@ -566,7 +597,7 @@ export class WebXREngine {
   private renderScene(
     projectionMatrix: Float32Array,
     viewMatrix: Float32Array,
-    roomGridDots: number[],
+    roomGrid: { buffer: Float32Array; count: number },
   ): void {
     const gl = this.gl;
     gl.enable(gl.DEPTH_TEST);
@@ -580,7 +611,7 @@ export class WebXREngine {
     // ==========================================
     // 1. RENDER SCANNING LIGHT-DOT SURFACE GRID (Active ONLY while scanning for surfaces)
     // ==========================================
-    if (roomGridDots.length > 0 && !this.reticleMatrix) {
+    if (roomGrid.count > 0 && !this.reticleMatrix) {
       // Disable depth write so particles blend crisply on top of camera without depth clipping
       gl.depthMask(false);
       gl.useProgram(this.pointCloudProgram);
@@ -599,7 +630,7 @@ export class WebXREngine {
       gl.bindBuffer(gl.ARRAY_BUFFER, this.pointCloudBuffer);
       gl.bufferData(
         gl.ARRAY_BUFFER,
-        new Float32Array(roomGridDots),
+        roomGrid.buffer.subarray(0, roomGrid.count),
         gl.DYNAMIC_DRAW,
       );
 
@@ -612,7 +643,7 @@ export class WebXREngine {
       gl.enableVertexAttribArray(alphaAttr);
       gl.vertexAttribPointer(alphaAttr, 1, gl.FLOAT, false, 16, 12);
 
-      gl.drawArrays(gl.POINTS, 0, roomGridDots.length / 4);
+      gl.drawArrays(gl.POINTS, 0, roomGrid.count / 4);
 
       gl.disableVertexAttribArray(alphaAttr);
       gl.depthMask(true);
@@ -653,23 +684,21 @@ export class WebXREngine {
         gl.uniform4f(uColor, 0.22, 0.74, 0.97, 0.95);
       }
 
-      // Elegant clean circular reticle ring ($6\text{cm}$ radius)
-      const torusVerts = this.createTorusMesh(0.06, 0.0035, 28, 8);
+      // Pre-computed static reticle ring (4,032 floats) and targeting dot (1,152 floats)
+      // Eliminates thousands of trig calls and array allocations per frame
       gl.bufferData(
         gl.ARRAY_BUFFER,
-        new Float32Array(torusVerts),
-        gl.DYNAMIC_DRAW,
+        this.cachedTorusVerts,
+        gl.STATIC_DRAW,
       );
-      gl.drawArrays(gl.TRIANGLES, 0, torusVerts.length / 3);
+      gl.drawArrays(gl.TRIANGLES, 0, this.cachedTorusVerts.length / 3);
 
-      // Clean center targeting dot ($6\text{mm}$)
-      const dotVerts = this.createSphereMesh({ x: 0, y: 0, z: 0 }, 0.006, 8);
       gl.bufferData(
         gl.ARRAY_BUFFER,
-        new Float32Array(dotVerts),
-        gl.DYNAMIC_DRAW,
+        this.cachedDotVerts,
+        gl.STATIC_DRAW,
       );
-      gl.drawArrays(gl.TRIANGLES, 0, dotVerts.length / 3);
+      gl.drawArrays(gl.TRIANGLES, 0, this.cachedDotVerts.length / 3);
 
       gl.uniformMatrix4fv(uModel, false, identity);
     }

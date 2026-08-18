@@ -45,8 +45,11 @@ pnpm run typecheck
 # Run all core engine unit tests hermetically
 pnpm run test
 
-# Check code formatting
+# Check code formatting (automated on git commit via nano-staged & husky)
 pnpm run format:check
+
+# Run formatting on staged files
+pnpm run nano-staged
 ```
 
 ### 2. Adding a New Tool

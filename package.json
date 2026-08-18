@@ -13,12 +13,16 @@
     "test": "turbo run test",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,css}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,css}\"",
-    "scaffold-tool": "tsx tools/scaffold-app.ts"
+    "scaffold-tool": "tsx tools/scaffold-app.ts",
+    "nano-staged": "nano-staged",
+    "prepare": "husky"
   },
   "devDependencies": {
+    "husky": "^9.1.7",
+    "nano-staged": "^1.0.2",
     "prettier": "^3.5.0",
+    "tsx": "^4.19.0",
     "turbo": "^2.4.0",
-    "typescript": "^7.0.2",
-    "tsx": "^4.19.0"
+    "typescript": "^7.0.2"
   }
 }

@@ -1,6 +1,6 @@
 /**
  * Pure WebGL WebXR AR Ruler Engine
- * Visualizes 3D light dot feature point cloud on surfaces during scanning,
+ * Visualizes structured 3D light-dot surface grid matrix during scanning and detection,
  * a clean minimalist placement pointer when surface is detected,
  * and 3D volumetric laser measurement lines with interactive handles.
  */
@@ -23,15 +23,6 @@ export interface XREngineCallbacks {
   onHandleDropped?: (index: number, points: Point3D[]) => void;
 }
 
-interface FeatureDot {
-  x: number;
-  y: number;
-  z: number;
-  alpha: number;
-  life: number;
-  maxLife: number;
-}
-
 export class WebXREngine {
   private gl: WebGL2RenderingContext | WebGLRenderingContext;
   private session: any = null;
@@ -48,10 +39,6 @@ export class WebXREngine {
   private vertexBuffer!: WebGLBuffer;
   private quadBuffer!: WebGLBuffer;
   private pointCloudBuffer!: WebGLBuffer;
-
-  // Feature Points / Light Dots Simulation on physical surfaces
-  private featureDots: FeatureDot[] = [];
-  private maxFeatureDots: number = 80;
 
   // Text Texture for 3D In-AR Measurement Label
   private textCanvas: HTMLCanvasElement;
@@ -102,7 +89,6 @@ export class WebXREngine {
 
     this.initShaders();
     this.initTextTexture();
-    this.initFeatureDots();
   }
 
   private initShaders(): void {
@@ -163,7 +149,7 @@ export class WebXREngine {
     ]);
     gl.bufferData(gl.ARRAY_BUFFER, quadVerts, gl.STATIC_DRAW);
 
-    // 3. 3D Light Dots Point Cloud Shader (Soft glowing light dots on surface before pointer lock)
+    // 3. 3D Light-Dot Surface Grid Matrix Shader
     const vsPointCloud = `
       attribute vec3 aPosition;
       attribute float aAlpha;
@@ -174,9 +160,9 @@ export class WebXREngine {
         vAlpha = aAlpha;
         vec4 viewPos = uViewMatrix * vec4(aPosition, 1.0);
         gl_Position = uProjectionMatrix * viewPos;
-        // Point size inversely proportional to camera distance
-        float dist = max(0.5, -viewPos.z);
-        gl_PointSize = clamp(140.0 / dist, 5.0, 24.0);
+        float dist = max(0.4, -viewPos.z);
+        // Crisp, refined grid point size
+        gl_PointSize = clamp(110.0 / dist, 4.0, 18.0);
       }
     `;
 
@@ -187,11 +173,11 @@ export class WebXREngine {
         vec2 coord = gl_PointCoord - vec2(0.5);
         float dist = length(coord);
         if (dist > 0.5) discard;
-        // Soft glowing light dot radial falloff
+        // Soft radial glow around a bright dot center
         float glow = smoothstep(0.5, 0.0, dist);
-        float core = smoothstep(0.2, 0.0, dist);
-        float alpha = (glow * 0.65 + core * 0.35) * vAlpha;
-        gl_FragColor = vec4(0.85, 0.95, 1.0, alpha);
+        float core = smoothstep(0.18, 0.0, dist);
+        float alpha = (glow * 0.6 + core * 0.4) * vAlpha;
+        gl_FragColor = vec4(0.82, 0.94, 1.0, alpha);
       }
     `;
 
@@ -199,49 +185,48 @@ export class WebXREngine {
     this.pointCloudBuffer = gl.createBuffer()!;
   }
 
-  private initFeatureDots(): void {
-    this.featureDots = [];
-  }
-
   /**
-   * Updates light dots scattered across the estimated physical surface in front of camera.
+   * Generates a structured planar grid of light dots on the detected physical surface.
    */
-  private updateFeatureDots(camPos: Point3D, camForward: Point3D): void {
-    // Age existing dots
-    for (let i = this.featureDots.length - 1; i >= 0; i--) {
-      const dot = this.featureDots[i]!;
-      dot.life += 1;
-      // Fade in then fade out
-      const progress = dot.life / dot.maxLife;
-      if (progress < 0.25) {
-        dot.alpha = progress / 0.25;
-      } else {
-        dot.alpha = 1.0 - (progress - 0.25) / 0.75;
-      }
-      if (dot.life >= dot.maxLife) {
-        this.featureDots.splice(i, 1);
+  private generateGridDots(
+    timeSec: number,
+    targetPos: Point3D,
+    surfaceMat: Float32Array | null,
+  ): number[] {
+    const dots: number[] = [];
+    const gridSize = 15; // 15x15 grid matrix
+    const spacing = 0.08; // 8cm pitch between grid dots
+    const half = Math.floor(gridSize / 2);
+    const maxRadius = half * spacing;
+
+    for (let ix = -half; ix <= half; ix++) {
+      for (let iz = -half; iz <= half; iz++) {
+        const lx = ix * spacing;
+        const lz = iz * spacing;
+        const r = Math.hypot(lx, lz);
+        if (r > maxRadius) continue;
+
+        // Structured geometric falloff and subtle outward pulse
+        const falloff = Math.max(0, 1.0 - r / maxRadius);
+        const wave = 0.65 + 0.35 * Math.sin(r * 14.0 - timeSec * 3.0);
+        const alpha = falloff * falloff * wave;
+
+        if (alpha < 0.03) continue;
+
+        if (surfaceMat) {
+          // Transform local grid coordinates using detected surface orientation matrix
+          const x = surfaceMat[0]! * lx + surfaceMat[8]! * lz + surfaceMat[12]!;
+          const y = surfaceMat[1]! * lx + surfaceMat[9]! * lz + surfaceMat[13]!;
+          const z =
+            surfaceMat[2]! * lx + surfaceMat[10]! * lz + surfaceMat[14]!;
+          dots.push(x, y, z, alpha);
+        } else {
+          // Horizontal surface estimate before lock
+          dots.push(targetPos.x + lx, targetPos.y, targetPos.z + lz, alpha);
+        }
       }
     }
-
-    // Spawn new light dots around the focal area on the surface plane
-    const spawnTarget = this.reticlePosition || {
-      x: camPos.x + camForward.x * 1.2,
-      y: camPos.y - 0.6, // estimated floor height
-      z: camPos.z + camForward.z * 1.2,
-    };
-
-    while (this.featureDots.length < this.maxFeatureDots) {
-      const angle = Math.random() * Math.PI * 2;
-      const radius = 0.08 + Math.random() * 0.65;
-      this.featureDots.push({
-        x: spawnTarget.x + Math.cos(angle) * radius,
-        y: spawnTarget.y + (Math.random() - 0.5) * 0.05,
-        z: spawnTarget.z + Math.sin(angle) * radius,
-        alpha: 0,
-        life: 0,
-        maxLife: 40 + Math.floor(Math.random() * 60),
-      });
-    }
+    return dots;
   }
 
   private createProgram(vsSource: string, fsSource: string): WebGLProgram {
@@ -402,7 +387,6 @@ export class WebXREngine {
     this.isXRActive = true;
     this.draggedPointIndex = null;
     this.hoveredHandleIndex = null;
-    this.featureDots = [];
 
     const baseLayer = new (window as any).XRWebGLLayer(session, this.gl);
     await session.updateRenderState({ baseLayer });
@@ -469,13 +453,12 @@ export class WebXREngine {
       this.hitTestSource = null;
       this.draggedPointIndex = null;
       this.hoveredHandleIndex = null;
-      this.featureDots = [];
       this.callbacks.onSessionEnded();
     });
 
     this.callbacks.onSessionStarted();
 
-    const onXRFrame = (_time: number, frame: any) => {
+    const onXRFrame = (time: number, frame: any) => {
       if (!this.session || !this.isXRActive) return;
 
       const gl = this.gl;
@@ -524,13 +507,22 @@ export class WebXREngine {
         gl.clearColor(0, 0, 0, 0);
         gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-        // Extract camera position and forward vector
+        const timeSec = time * 0.001;
         const camPos = pose.transform.position;
         const camMat = pose.transform.matrix;
         const camForward = { x: -camMat[8], y: -camMat[9], z: -camMat[10] };
 
-        // Update light dots on surfaces
-        this.updateFeatureDots(camPos, camForward);
+        const targetPos = this.reticlePosition || {
+          x: camPos.x + camForward.x * 1.2,
+          y: camPos.y - 0.55,
+          z: camPos.z + camForward.z * 1.2,
+        };
+
+        const gridDots = this.generateGridDots(
+          timeSec,
+          targetPos,
+          this.reticleMatrix,
+        );
 
         for (const view of pose.views) {
           const viewport = layer.getViewport(view);
@@ -539,6 +531,7 @@ export class WebXREngine {
           this.renderScene(
             view.projectionMatrix,
             view.transform.inverse.matrix,
+            gridDots,
           );
         }
       }
@@ -560,7 +553,6 @@ export class WebXREngine {
       this.isXRActive = false;
       this.draggedPointIndex = null;
       this.hoveredHandleIndex = null;
-      this.featureDots = [];
     }
   }
 
@@ -571,6 +563,7 @@ export class WebXREngine {
   private renderScene(
     projectionMatrix: Float32Array,
     viewMatrix: Float32Array,
+    gridDots: number[],
   ): void {
     const gl = this.gl;
     gl.enable(gl.DEPTH_TEST);
@@ -582,11 +575,11 @@ export class WebXREngine {
     ]);
 
     // ==========================================
-    // 1. RENDER 3D LIGHT DOTS FEATURE POINT CLOUD (Surface Scanning Feedback)
+    // 1. RENDER 3D STRUCTURED LIGHT-DOT SURFACE GRID (Physical Planar Matrix)
     // ==========================================
-    // Show light dots across surfaces while scanning and discovering planes
+    // Render clean geometric surface grid while scanning or placing
     if (
-      this.featureDots.length > 0 &&
+      gridDots.length > 0 &&
       (!this.reticleMatrix || this.points.length === 0)
     ) {
       gl.useProgram(this.pointCloudProgram);
@@ -602,15 +595,10 @@ export class WebXREngine {
       gl.uniformMatrix4fv(uProj, false, projectionMatrix);
       gl.uniformMatrix4fv(uView, false, viewMatrix);
 
-      const dotVerts: number[] = [];
-      for (const d of this.featureDots) {
-        dotVerts.push(d.x, d.y, d.z, d.alpha);
-      }
-
       gl.bindBuffer(gl.ARRAY_BUFFER, this.pointCloudBuffer);
       gl.bufferData(
         gl.ARRAY_BUFFER,
-        new Float32Array(dotVerts),
+        new Float32Array(gridDots),
         gl.DYNAMIC_DRAW,
       );
 
@@ -623,7 +611,7 @@ export class WebXREngine {
       gl.enableVertexAttribArray(alphaAttr);
       gl.vertexAttribPointer(alphaAttr, 1, gl.FLOAT, false, 16, 12);
 
-      gl.drawArrays(gl.POINTS, 0, this.featureDots.length);
+      gl.drawArrays(gl.POINTS, 0, gridDots.length / 4);
 
       gl.disableVertexAttribArray(alphaAttr);
     }

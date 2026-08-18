@@ -1,6 +1,6 @@
 /**
- * Pure WebGL WebXR AR Ruler Engine with 3D Spatial Billboard Measurements
- * and Interactive 3D Handle Manipulation (Moving/Repositioning Anchors in AR).
+ * Pure WebGL WebXR AR Ruler Engine with 3D Spatial Billboard Measurements,
+ * Interactive 3D Handle Manipulation, and Dynamic Physical Surface Plane Visualizations.
  */
 
 import {
@@ -32,8 +32,10 @@ export class WebXREngine {
   // Shaders & Buffers
   private geometryProgram!: WebGLProgram;
   private billboardProgram!: WebGLProgram;
+  private surfaceProgram!: WebGLProgram;
   private vertexBuffer!: WebGLBuffer;
   private quadBuffer!: WebGLBuffer;
+  private surfacePlaneBuffer!: WebGLBuffer;
 
   // Text Texture for 3D In-AR Measurement Label
   private textCanvas: HTMLCanvasElement;
@@ -120,7 +122,6 @@ export class WebXREngine {
       uniform vec2 uSize;
       varying vec2 vUv;
       void main() {
-        // Invert vertical V coordinate to match 2D Canvas texture space
         vUv = vec2((aCorner.x + 1.0) * 0.5, (1.0 - aCorner.y) * 0.5);
         vec4 camCenter = uViewMatrix * vec4(uCenterPos, 1.0);
         vec4 camPos = camCenter + vec4(aCorner.x * uSize.x * 0.5, aCorner.y * uSize.y * 0.5, 0.0, 0.0);
@@ -144,6 +145,84 @@ export class WebXREngine {
       -1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1,
     ]);
     gl.bufferData(gl.ARRAY_BUFFER, quadVerts, gl.STATIC_DRAW);
+
+    // 3. Dynamic Surface Plane Shader (Radiating radar ripples, dot matrix & target ring on physical floor/table)
+    const vsSurface = `
+      attribute vec3 aPosition;
+      uniform mat4 uProjectionMatrix;
+      uniform mat4 uViewMatrix;
+      uniform mat4 uModelMatrix;
+      varying vec2 vPlaneUv;
+      void main() {
+        vPlaneUv = aPosition.xz; // Surface plane coordinates (-1..1)
+        gl_Position = uProjectionMatrix * uViewMatrix * uModelMatrix * vec4(aPosition, 1.0);
+      }
+    `;
+
+    const fsSurface = `
+      precision mediump float;
+      varying vec2 vPlaneUv;
+      uniform float uTime;
+      uniform vec4 uColor;
+
+      void main() {
+        float dist = length(vPlaneUv);
+        if (dist > 1.0) discard;
+
+        // Outer target ring
+        float ring = smoothstep(0.04, 0.0, abs(dist - 0.85));
+
+        // Secondary inner target ring
+        float innerRing = smoothstep(0.03, 0.0, abs(dist - 0.42));
+
+        // Dynamic radiating radar wave moving across the physical surface
+        float wave = fract(dist * 2.2 - uTime * 0.85);
+        float waveAlpha = smoothstep(0.0, 0.35, wave) * (1.0 - wave) * (1.0 - dist);
+
+        // Center target dot
+        float centerDot = smoothstep(0.08, 0.0, dist);
+
+        // Crosshair ticks
+        float tickX = smoothstep(0.015, 0.0, abs(vPlaneUv.y)) * smoothstep(0.9, 0.25, abs(vPlaneUv.x));
+        float tickY = smoothstep(0.015, 0.0, abs(vPlaneUv.x)) * smoothstep(0.9, 0.25, abs(vPlaneUv.y));
+        float ticks = max(tickX, tickY) * 0.8;
+
+        // Planar dot matrix pattern
+        vec2 dotGrid = fract(vPlaneUv * 6.0 + 0.5) - 0.5;
+        float dots = smoothstep(0.14, 0.0, length(dotGrid)) * (1.0 - dist) * 0.45;
+
+        float alpha = clamp(ring * 0.95 + innerRing * 0.55 + waveAlpha * 0.6 + centerDot * 0.95 + ticks + dots, 0.0, 1.0);
+
+        gl_FragColor = vec4(uColor.rgb, alpha * uColor.a);
+      }
+    `;
+
+    this.surfaceProgram = this.createProgram(vsSurface, fsSurface);
+    this.surfacePlaneBuffer = gl.createBuffer()!;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.surfacePlaneBuffer);
+    // 0.4m x 0.4m planar quad along X-Z plane
+    const radius = 0.22;
+    const surfaceVerts = new Float32Array([
+      -radius,
+      0,
+      -radius,
+      radius,
+      0,
+      -radius,
+      -radius,
+      0,
+      radius,
+      -radius,
+      0,
+      radius,
+      radius,
+      0,
+      -radius,
+      radius,
+      0,
+      radius,
+    ]);
+    gl.bufferData(gl.ARRAY_BUFFER, surfaceVerts, gl.STATIC_DRAW);
   }
 
   private createProgram(vsSource: string, fsSource: string): WebGLProgram {
@@ -375,7 +454,7 @@ export class WebXREngine {
 
     this.callbacks.onSessionStarted();
 
-    const onXRFrame = (_time: number, frame: any) => {
+    const onXRFrame = (time: number, frame: any) => {
       if (!this.session || !this.isXRActive) return;
 
       const gl = this.gl;
@@ -424,6 +503,8 @@ export class WebXREngine {
         gl.clearColor(0, 0, 0, 0);
         gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
+        const timeSec = time * 0.001;
+
         for (const view of pose.views) {
           const viewport = layer.getViewport(view);
           gl.viewport(viewport.x, viewport.y, viewport.width, viewport.height);
@@ -431,6 +512,7 @@ export class WebXREngine {
           this.renderScene(
             view.projectionMatrix,
             view.transform.inverse.matrix,
+            timeSec,
           );
         }
       }
@@ -462,14 +544,65 @@ export class WebXREngine {
   private renderScene(
     projectionMatrix: Float32Array,
     viewMatrix: Float32Array,
+    timeSec: number,
   ): void {
     const gl = this.gl;
     gl.enable(gl.DEPTH_TEST);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
+    const identity = new Float32Array([
+      1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1,
+    ]);
+
     // ==========================================
-    // 1. RENDER 3D GEOMETRY (Torus Reticle, 3D Tubes, Spheres)
+    // 1. RENDER 3D PHYSICAL SURFACE PLANE VISUALIZATION
+    // ==========================================
+    if (this.reticleMatrix) {
+      gl.useProgram(this.surfaceProgram);
+
+      const uSurfProj = gl.getUniformLocation(
+        this.surfaceProgram,
+        "uProjectionMatrix",
+      );
+      const uSurfView = gl.getUniformLocation(
+        this.surfaceProgram,
+        "uViewMatrix",
+      );
+      const uSurfModel = gl.getUniformLocation(
+        this.surfaceProgram,
+        "uModelMatrix",
+      );
+      const uSurfTime = gl.getUniformLocation(this.surfaceProgram, "uTime");
+      const uSurfColor = gl.getUniformLocation(this.surfaceProgram, "uColor");
+
+      gl.uniformMatrix4fv(uSurfProj, false, projectionMatrix);
+      gl.uniformMatrix4fv(uSurfView, false, viewMatrix);
+      gl.uniformMatrix4fv(uSurfModel, false, this.reticleMatrix);
+      gl.uniform1f(uSurfTime, timeSec);
+
+      // Color scheme: Green when dragging handle, Gold when over handle, Cyan when scanning/placing
+      if (this.draggedPointIndex !== null) {
+        gl.uniform4f(uSurfColor, 0.13, 0.77, 0.36, 0.95);
+      } else if (this.hoveredHandleIndex !== null) {
+        gl.uniform4f(uSurfColor, 0.98, 0.75, 0.18, 0.95);
+      } else {
+        gl.uniform4f(uSurfColor, 0.22, 0.74, 0.97, 0.95);
+      }
+
+      const surfPosAttr = gl.getAttribLocation(
+        this.surfaceProgram,
+        "aPosition",
+      );
+      gl.enableVertexAttribArray(surfPosAttr);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.surfacePlaneBuffer);
+      gl.vertexAttribPointer(surfPosAttr, 3, gl.FLOAT, false, 0, 0);
+
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+    }
+
+    // ==========================================
+    // 2. RENDER 3D GEOMETRY (3D Tubes, Spheres)
     // ==========================================
     gl.useProgram(this.geometryProgram);
 
@@ -483,10 +616,6 @@ export class WebXREngine {
 
     gl.uniformMatrix4fv(uProj, false, projectionMatrix);
     gl.uniformMatrix4fv(uView, false, viewMatrix);
-
-    const identity = new Float32Array([
-      1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1,
-    ]);
     gl.uniformMatrix4fv(uModel, false, identity);
 
     const posAttr = gl.getAttribLocation(this.geometryProgram, "aPosition");
@@ -494,43 +623,10 @@ export class WebXREngine {
     gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexBuffer);
     gl.vertexAttribPointer(posAttr, 3, gl.FLOAT, false, 0, 0);
 
-    // 1a. Surface Reticle (Volumetric 3D Torus)
-    if (this.reticleMatrix) {
-      gl.uniformMatrix4fv(uModel, false, this.reticleMatrix);
-
-      // Color reticle cyan, or yellow if hovering near a handle, or green if dragging
-      if (this.draggedPointIndex !== null) {
-        gl.uniform4f(uColor, 0.13, 0.77, 0.36, 0.95); // Green when dragging
-      } else if (this.hoveredHandleIndex !== null) {
-        gl.uniform4f(uColor, 0.98, 0.75, 0.18, 0.95); // Gold when over a handle
-      } else {
-        gl.uniform4f(uColor, 0.22, 0.74, 0.97, 0.95); // Cyan standard
-      }
-
-      const torusVerts = this.createTorusMesh(0.075, 0.005, 24, 8);
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        new Float32Array(torusVerts),
-        gl.DYNAMIC_DRAW,
-      );
-      gl.drawArrays(gl.TRIANGLES, 0, torusVerts.length / 3);
-
-      // Center dot sphere
-      const dotVerts = this.createSphereMesh({ x: 0, y: 0, z: 0 }, 0.008, 8);
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        new Float32Array(dotVerts),
-        gl.DYNAMIC_DRAW,
-      );
-      gl.drawArrays(gl.TRIANGLES, 0, dotVerts.length / 3);
-
-      gl.uniformMatrix4fv(uModel, false, identity);
-    }
-
     let measurementMidpoint: Point3D | null = null;
     let currentDistanceValue: number = 0;
 
-    // 1b. Live Guidance Line (Point 1 -> Reticle)
+    // 2a. Live Guidance Line (Point 1 -> Reticle)
     if (
       this.points.length === 1 &&
       this.points[0] &&
@@ -561,7 +657,7 @@ export class WebXREngine {
       };
     }
 
-    // 1c. Locked / Active Measurement Line (Point 1 -> Point 2)
+    // 2b. Locked / Active Measurement Line (Point 1 -> Point 2)
     if (this.points.length >= 2 && this.points[0] && this.points[1]) {
       gl.uniform4f(uColor, 0.23, 0.51, 0.96, 1.0); // Bold Blue Tube
 
@@ -587,7 +683,7 @@ export class WebXREngine {
       };
     }
 
-    // 1d. Render 3D Handles / Anchor Spheres
+    // 2c. Render 3D Handles / Anchor Spheres
     for (let i = 0; i < this.points.length; i++) {
       const p = this.points[i];
       if (!p) continue;
@@ -626,7 +722,7 @@ export class WebXREngine {
     }
 
     // ==========================================
-    // 2. RENDER 3D IN-AR SPATIAL BILLBOARD LABEL
+    // 3. RENDER 3D IN-AR SPATIAL BILLBOARD LABEL
     // ==========================================
     if (measurementMidpoint && currentDistanceValue > 0.001) {
       const formattedText = formatDistance(currentDistanceValue, this.unit, 2);
@@ -764,41 +860,5 @@ export class WebXREngine {
       y: center.y + radius * Math.cos(theta),
       z: center.z + radius * Math.sin(theta) * Math.sin(phi),
     };
-  }
-
-  private createTorusMesh(
-    radius: number,
-    tubeRadius: number,
-    radialSegments: number = 24,
-    tubularSegments: number = 8,
-  ): number[] {
-    const verts: number[] = [];
-
-    for (let j = 0; j < radialSegments; j++) {
-      const u1 = (j / radialSegments) * Math.PI * 2;
-      const u2 = ((j + 1) / radialSegments) * Math.PI * 2;
-
-      for (let i = 0; i < tubularSegments; i++) {
-        const v1 = (i / tubularSegments) * Math.PI * 2;
-        const v2 = ((i + 1) / tubularSegments) * Math.PI * 2;
-
-        const p1 = this.torusPoint(u1, v1, radius, tubeRadius);
-        const p2 = this.torusPoint(u2, v1, radius, tubeRadius);
-        const p3 = this.torusPoint(u1, v2, radius, tubeRadius);
-        const p4 = this.torusPoint(u2, v2, radius, tubeRadius);
-
-        verts.push(p1.x, p1.y, p1.z, p3.x, p3.y, p3.z, p2.x, p2.y, p2.z);
-        verts.push(p2.x, p2.y, p2.z, p3.x, p3.y, p3.z, p4.x, p4.y, p4.z);
-      }
-    }
-
-    return verts;
-  }
-
-  private torusPoint(u: number, v: number, r: number, tubeR: number): Point3D {
-    const x = (r + tubeR * Math.cos(v)) * Math.cos(u);
-    const y = tubeR * Math.sin(v);
-    const z = (r + tubeR * Math.cos(v)) * Math.sin(u);
-    return { x, y, z };
   }
 }

@@ -14,6 +14,7 @@ export function App() {
   const [unit, setUnit] = useState<DistanceUnit>("m");
   const [isARSupported, setIsARSupported] = useState<boolean | null>(null);
   const [isARActive, setIsARActive] = useState<boolean>(false);
+  const [isScanning, setIsScanning] = useState<boolean>(true);
   const [points, setPoints] = useState<Point3D[]>([]);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
@@ -39,7 +40,7 @@ export function App() {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  // Initialize WebXR Engine & Automatically check support
+  // Initialize WebXR Engine & check support
   useEffect(() => {
     WebXREngine.isSupported().then((supported) => {
       setIsARSupported(supported);
@@ -61,12 +62,17 @@ export function App() {
           showToast(`Distance: ${formatDistance(d, unit, 2)}`, "success");
         }
       },
+      onScanningStateChange: (scanning) => {
+        setIsScanning(scanning);
+      },
       onSessionStarted: () => {
         setIsARActive(true);
+        setIsScanning(true);
         setPoints([]);
       },
       onSessionEnded: () => {
         setIsARActive(false);
+        setIsScanning(true);
       },
     });
     engine.unit = unit;
@@ -103,7 +109,7 @@ export function App() {
     showToast("Measurement cleared", "info");
   };
 
-  // Fallback 3D Sandbox when WebXR is not available on current device
+  // Fallback 3D Sandbox when WebXR is not available
   useEffect(() => {
     if (isARSupported === false && fallbackCanvasRef.current) {
       const renderer = new Renderer3D(fallbackCanvasRef.current);
@@ -146,7 +152,7 @@ export function App() {
       {/* 3. Minimal In-AR Control Overlay */}
       {isARSupported !== false && (
         <div className="ar-minimal-overlay">
-          {/* Top Instruction Banner */}
+          {/* Top Instruction Banner (safe area padding to avoid camera hole) */}
           <div className="ar-top-banner">
             {!isARActive ? (
               <button className="btn-start-ar-hero" onClick={handleStartAR}>
@@ -154,12 +160,19 @@ export function App() {
                 <span>Start AR Ruler</span>
               </button>
             ) : (
-              <div className="ar-status-pill">
-                {points.length === 0
-                  ? "🎯 Aim at surface & tap to set Point 1"
-                  : points.length === 1
-                    ? "📏 Aim at endpoint & tap for Point 2"
-                    : "✅ Measurement locked (Tap to reset)"}
+              <div className={`ar-status-pill ${isScanning ? "scanning" : ""}`}>
+                {isScanning ? (
+                  <>
+                    <span className="pulsing-scan-dot" aria-hidden="true" />
+                    <span>📱 Move phone slowly to detect surface...</span>
+                  </>
+                ) : points.length === 0 ? (
+                  "🎯 Surface detected! Tap to set Point 1"
+                ) : points.length === 1 ? (
+                  "📏 Move to endpoint & tap for Point 2"
+                ) : (
+                  "✅ Measurement locked (Tap to reset)"
+                )}
               </div>
             )}
           </div>

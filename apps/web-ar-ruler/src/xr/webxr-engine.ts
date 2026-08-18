@@ -15,6 +15,7 @@ export interface XREngineCallbacks {
   onPointPlaced: (point: Point3D, points: Point3D[]) => void;
   onSessionStarted: () => void;
   onSessionEnded: () => void;
+  onScanningStateChange?: (isScanning: boolean) => void;
 }
 
 export class WebXREngine {
@@ -315,10 +316,12 @@ export class WebXREngine {
           const pos = pose.transform.position;
           this.reticlePosition = { x: pos.x, y: pos.y, z: pos.z };
           this.reticleMatrix = pose.transform.matrix;
+          this.callbacks.onScanningStateChange?.(false);
         }
       } else {
         this.reticlePosition = null;
         this.reticleMatrix = null;
+        this.callbacks.onScanningStateChange?.(true);
       }
 
       // Render WebXR scene into XRWebGLLayer framebuffer

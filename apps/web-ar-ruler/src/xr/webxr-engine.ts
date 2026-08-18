@@ -206,12 +206,12 @@ export class WebXREngine {
         const r = Math.hypot(lx, lz);
         if (r > maxRadius) continue;
 
-        // Structured geometric falloff and subtle outward pulse
+        // Structured geometric falloff and subtle outward pulse (delicate, light visibility at all times)
         const falloff = Math.max(0, 1.0 - r / maxRadius);
-        const wave = 0.65 + 0.35 * Math.sin(r * 14.0 - timeSec * 3.0);
-        const alpha = falloff * falloff * wave;
+        const wave = 0.7 + 0.3 * Math.sin(r * 12.0 - timeSec * 2.5);
+        const alpha = falloff * falloff * wave * 0.45;
 
-        if (alpha < 0.03) continue;
+        if (alpha < 0.015) continue;
 
         if (surfaceMat) {
           // Transform local grid coordinates using detected surface orientation matrix
@@ -575,13 +575,9 @@ export class WebXREngine {
     ]);
 
     // ==========================================
-    // 1. RENDER 3D STRUCTURED LIGHT-DOT SURFACE GRID (Physical Planar Matrix)
+    // 1. RENDER 3D STRUCTURED LIGHT-DOT SURFACE GRID (Continuous Subtle Matrix)
     // ==========================================
-    // Render clean geometric surface grid while scanning or placing
-    if (
-      gridDots.length > 0 &&
-      (!this.reticleMatrix || this.points.length === 0)
-    ) {
+    if (gridDots.length > 0) {
       gl.useProgram(this.pointCloudProgram);
 
       const uProj = gl.getUniformLocation(

@@ -63,6 +63,7 @@ body {
   overflow: hidden;
   user-select: none;
   -webkit-font-smoothing: antialiased;
+  touch-action: manipulation;
 }
 
 /* App Layout */
@@ -72,6 +73,10 @@ body {
   height: 100dvh;
   width: 100vw;
   position: relative;
+}
+
+.app-layout.ar-active {
+  background: transparent !important;
 }
 
 /* Header */
@@ -118,19 +123,81 @@ body {
   gap: 0.5rem;
 }
 
-/* 3D Viewport */
+/* 3D Viewport & Camera Video Feed */
 .viewport-container {
   flex: 1;
   position: relative;
   overflow: hidden;
   touch-action: none;
+  background-color: var(--bg-primary);
+}
+
+.viewport-container.ar-active {
+  background-color: #000000 !important;
+}
+
+.camera-video-stream {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  z-index: 1;
+  display: none;
+  pointer-events: none;
+}
+
+.camera-video-stream.active {
+  display: block;
 }
 
 .canvas-3d {
+  position: relative;
+  z-index: 2;
   width: 100%;
   height: 100%;
   display: block;
   cursor: crosshair;
+  touch-action: none;
+}
+
+/* Center Reticle in AR Mode */
+.ar-center-reticle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 3;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.reticle-outer-ring {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: 2px dashed #38bdf8;
+  animation: reticleSpin 12s linear infinite;
+}
+
+.reticle-center-dot {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #38bdf8;
+  box-shadow: 0 0 8px #38bdf8;
+}
+
+@keyframes reticleSpin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* Overlay Elements */
@@ -154,6 +221,42 @@ body {
   max-width: 95vw;
 }
 
+.overlay-drop-point-wrapper {
+  position: absolute;
+  right: 1.25rem;
+  bottom: 6.5rem;
+  z-index: 6;
+}
+
+.btn-drop-point-fab {
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  color: #ffffff;
+  padding: 0.75rem 1.2rem;
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 0.95rem;
+  font-weight: 700;
+  box-shadow: 0 4px 20px rgba(37, 99, 235, 0.45);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition:
+    transform 0.1s ease,
+    box-shadow 0.1s ease;
+  touch-action: manipulation;
+}
+
+.btn-drop-point-fab:active {
+  transform: scale(0.95);
+  box-shadow: 0 2px 10px rgba(37, 99, 235, 0.6);
+}
+
+.fab-inner {
+  font-size: 1.2rem;
+}
+
 .canvas-hint {
   position: absolute;
   bottom: 5.5rem;
@@ -168,6 +271,7 @@ body {
   backdrop-filter: blur(8px);
   pointer-events: none;
   z-index: 4;
+  white-space: nowrap;
 }
 
 /* Metrics Card */
@@ -390,7 +494,7 @@ body {
 }
 
 .btn-ar-active {
-  background: var(--danger);
+  background: var(--danger) !important;
 }
 
 .btn-sm {
@@ -709,5 +813,8 @@ body {
   }
   .metrics-big-number {
     font-size: 1.75rem;
+  }
+  .canvas-hint {
+    display: none;
   }
 }

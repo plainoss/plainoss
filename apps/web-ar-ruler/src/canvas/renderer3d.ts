@@ -82,6 +82,25 @@ export const LIGHT_THEME: RenderTheme = {
   textMuted: "#64748b",
 };
 
+export const AR_THEME: RenderTheme = {
+  bg: "transparent",
+  gridLine: "rgba(255, 255, 255, 0.15)",
+  gridLineMajor: "rgba(255, 255, 255, 0.35)",
+  axisX: "#ef4444",
+  axisZ: "#38bdf8",
+  pointFill: "#38bdf8",
+  pointActive: "#f59e0b",
+  pointStroke: "#ffffff",
+  lineStroke: "#38bdf8",
+  lineGuide: "rgba(56, 189, 248, 0.65)",
+  polygonFill: "rgba(56, 189, 248, 0.3)",
+  polygonStroke: "#38bdf8",
+  badgeBg: "rgba(15, 23, 42, 0.92)",
+  badgeText: "#ffffff",
+  badgeBorder: "rgba(56, 189, 248, 0.5)",
+  textMuted: "#cbd5e1",
+};
+
 export class Renderer3D {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
@@ -93,6 +112,7 @@ export class Renderer3D {
   };
   public fov: number = 650;
   public theme: RenderTheme = DARK_THEME;
+  public isARMode: boolean = false;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -200,13 +220,62 @@ export class Renderer3D {
 
     const t = (planeY - camOriginWorld.y) / ry1;
     if (t <= 0) {
-      return null;
+      // If ray doesn't hit ground in front of camera, unproject along ray at 2 meters
+      return this.unprojectRayDistance(screenX, screenY, 2.0);
     }
 
     return {
       x: camOriginWorld.x + rx2 * t,
       y: planeY,
       z: camOriginWorld.z + rz2 * t,
+    };
+  }
+
+  /**
+   * Unprojects a screen point to a 3D coordinate along the view ray at a specific distance.
+   */
+  public unprojectRayDistance(
+    screenX: number,
+    screenY: number,
+    distanceMeters: number = 1.5,
+  ): Point3D {
+    const rect = this.canvas.getBoundingClientRect();
+    const width = rect.width || 1;
+    const height = rect.height || 1;
+
+    const normX = (screenX - width / 2) / this.fov;
+    const normY = -(screenY - height / 2) / this.fov;
+
+    const cosP = Math.cos(-this.camera.pitch);
+    const sinP = Math.sin(-this.camera.pitch);
+    const ry1 = normY * cosP - 1 * sinP;
+    const rz1 = normY * sinP + 1 * cosP;
+
+    const cosY = Math.cos(-this.camera.yaw);
+    const sinY = Math.sin(-this.camera.yaw);
+    const rx2 = normX * cosY - rz1 * sinY;
+    const rz2 = normX * sinY + rz1 * cosY;
+
+    const rayDirLen = Math.sqrt(rx2 * rx2 + ry1 * ry1 + rz2 * rz2) || 1;
+    const dirX = rx2 / rayDirLen;
+    const dirY = ry1 / rayDirLen;
+    const dirZ = rz2 / rayDirLen;
+
+    const camOriginRel = {
+      x: 0,
+      y: -this.camera.distance * Math.sin(this.camera.pitch),
+      z: -this.camera.distance * Math.cos(this.camera.pitch),
+    };
+    const camOriginWorld = {
+      x: this.camera.target.x + (camOriginRel.x * cosY - camOriginRel.z * sinY),
+      y: this.camera.target.y + (camOriginRel.y * cosP + camOriginRel.z * sinP),
+      z: this.camera.target.z + (camOriginRel.x * sinY + camOriginRel.z * cosY),
+    };
+
+    return {
+      x: camOriginWorld.x + dirX * distanceMeters,
+      y: camOriginWorld.y + dirY * distanceMeters,
+      z: camOriginWorld.z + dirZ * distanceMeters,
     };
   }
 
@@ -225,7 +294,7 @@ export class Renderer3D {
 
     ctx.clearRect(0, 0, rect.width, rect.height);
 
-    // 1. Draw 3D Ground Grid
+    // 1. Draw 3D Ground Grid (or spatial crosshairs in AR mode)
     this.renderGrid();
 
     // 2. Draw polygon fill if in Polygon mode
@@ -247,8 +316,8 @@ export class Renderer3D {
 
   private renderGrid(): void {
     const ctx = this.ctx;
-    const gridRange = 3; // -3m to +3m
-    const step = 0.5; // 0.5m subdivisions
+    const gridRange = this.isARMode ? 2 : 3;
+    const step = 0.5;
 
     ctx.lineWidth = 1;
 
@@ -315,7 +384,7 @@ export class Renderer3D {
 
     ctx.fillStyle = this.theme.polygonFill;
     ctx.strokeStyle = this.theme.polygonStroke;
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 2.5;
 
     ctx.beginPath();
     ctx.moveTo(first.x, first.y);
@@ -358,7 +427,7 @@ export class Renderer3D {
 
       if (s1 && s2) {
         ctx.strokeStyle = this.theme.lineStroke;
-        ctx.lineWidth = 3;
+        ctx.lineWidth = 3.5;
         ctx.beginPath();
         ctx.moveTo(s1.x, s1.y);
         ctx.lineTo(s2.x, s2.y);
@@ -383,7 +452,7 @@ export class Renderer3D {
         const sFirst = this.project(pFirst);
         if (sLast && sFirst) {
           ctx.strokeStyle = this.theme.lineStroke;
-          ctx.lineWidth = 2;
+          ctx.lineWidth = 2.5;
           ctx.setLineDash([4, 4]);
           ctx.beginPath();
           ctx.moveTo(sLast.x, sLast.y);
@@ -403,7 +472,7 @@ export class Renderer3D {
 
         if (sLast && sHover) {
           ctx.strokeStyle = this.theme.lineGuide;
-          ctx.lineWidth = 2;
+          ctx.lineWidth = 2.5;
           ctx.setLineDash([6, 6]);
           ctx.beginPath();
           ctx.moveTo(sLast.x, sLast.y);
@@ -449,7 +518,7 @@ export class Renderer3D {
     if (sApex) {
       this.drawBadge(
         sApex.x,
-        sApex.y - 30,
+        sApex.y - 32,
         formatAngle(angle, angleUnit),
         "Angle",
       );
@@ -469,17 +538,17 @@ export class Renderer3D {
       // Outer glow/ring
       ctx.fillStyle = isLast ? this.theme.pointActive : this.theme.pointFill;
       ctx.strokeStyle = this.theme.pointStroke;
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 2.5;
 
       ctx.beginPath();
-      ctx.arc(sp.x, sp.y, isFirst || isLast ? 7 : 5, 0, Math.PI * 2);
+      ctx.arc(sp.x, sp.y, isFirst || isLast ? 8 : 6, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
 
       // Point label index (P1, P2...)
       ctx.fillStyle = this.theme.badgeText;
-      ctx.font = "600 11px system-ui, sans-serif";
-      ctx.fillText(`P${idx + 1}`, sp.x + 10, sp.y - 8);
+      ctx.font = "700 12px system-ui, sans-serif";
+      ctx.fillText(`P${idx + 1}`, sp.x + 11, sp.y - 8);
     });
 
     // Hover cursor indicator
@@ -487,10 +556,10 @@ export class Renderer3D {
       const sHover = this.project(hoverPoint);
       if (sHover) {
         ctx.strokeStyle = this.theme.pointActive;
-        ctx.lineWidth = 1.5;
-        ctx.setLineDash([3, 3]);
+        ctx.lineWidth = 2;
+        ctx.setLineDash([4, 4]);
         ctx.beginPath();
-        ctx.arc(sHover.x, sHover.y, 8, 0, Math.PI * 2);
+        ctx.arc(sHover.x, sHover.y, 10, 0, Math.PI * 2);
         ctx.stroke();
         ctx.setLineDash([]);
       }
@@ -505,42 +574,42 @@ export class Renderer3D {
   ): void {
     const ctx = this.ctx;
     ctx.save();
-    ctx.font = "600 12px system-ui, -apple-system, sans-serif";
+    ctx.font = "700 12px system-ui, -apple-system, sans-serif";
     const mainWidth = ctx.measureText(text).width;
-    let totalWidth = mainWidth + 16;
+    let totalWidth = mainWidth + 18;
 
     let subWidth = 0;
     if (subtitle) {
-      ctx.font = "500 10px system-ui, -apple-system, sans-serif";
+      ctx.font = "600 10px system-ui, -apple-system, sans-serif";
       subWidth = ctx.measureText(subtitle).width;
-      totalWidth = Math.max(totalWidth, subWidth + 16);
+      totalWidth = Math.max(totalWidth, subWidth + 18);
     }
 
-    const height = subtitle ? 36 : 24;
+    const height = subtitle ? 38 : 26;
     const badgeX = x - totalWidth / 2;
     const badgeY = y - height / 2;
 
     // Rounded rectangle badge
     ctx.fillStyle = this.theme.badgeBg;
     ctx.strokeStyle = this.theme.badgeBorder;
-    ctx.lineWidth = 1;
-    this.roundRect(ctx, badgeX, badgeY, totalWidth, height, 6);
+    ctx.lineWidth = 1.5;
+    this.roundRect(ctx, badgeX, badgeY, totalWidth, height, 7);
     ctx.fill();
     ctx.stroke();
 
     // Text rendering
     if (subtitle) {
       ctx.fillStyle = this.theme.textMuted;
-      ctx.font = "500 10px system-ui, -apple-system, sans-serif";
-      ctx.fillText(subtitle, x - subWidth / 2, badgeY + 13);
+      ctx.font = "600 10px system-ui, -apple-system, sans-serif";
+      ctx.fillText(subtitle, x - subWidth / 2, badgeY + 14);
 
       ctx.fillStyle = this.theme.badgeText;
-      ctx.font = "700 12px system-ui, -apple-system, sans-serif";
-      ctx.fillText(text, x - mainWidth / 2, badgeY + 28);
+      ctx.font = "800 12px system-ui, -apple-system, sans-serif";
+      ctx.fillText(text, x - mainWidth / 2, badgeY + 30);
     } else {
       ctx.fillStyle = this.theme.badgeText;
-      ctx.font = "600 12px system-ui, -apple-system, sans-serif";
-      ctx.fillText(text, x - mainWidth / 2, badgeY + 16);
+      ctx.font = "700 12px system-ui, -apple-system, sans-serif";
+      ctx.fillText(text, x - mainWidth / 2, badgeY + 17);
     }
 
     ctx.restore();

@@ -57,6 +57,15 @@ export class WebXRManager {
       throw new Error("WebXR not available");
     }
 
+    if (this.session) {
+      try {
+        await this.session.end();
+      } catch {
+        // Ignore session end errors
+      }
+      this.session = null;
+    }
+
     const sessionInit: any = {
       requiredFeatures: ["hit-test"],
       optionalFeatures: ["local-floor", "viewer"],
@@ -88,7 +97,7 @@ export class WebXRManager {
       if (!this.session || !this.isRunning) return;
 
       const hitTestResults = frame.getHitTestResults(this.hitTestSource);
-      if (hitTestResults.length > 0) {
+      if (hitTestResults && hitTestResults.length > 0) {
         const hit = hitTestResults[0];
         const pose = hit.getPose(this.refSpace);
         if (pose) {
@@ -114,7 +123,11 @@ export class WebXRManager {
    */
   public async endSession(): Promise<void> {
     if (this.session) {
-      await this.session.end();
+      try {
+        await this.session.end();
+      } catch {
+        // Ignore error if already ended
+      }
       this.session = null;
       this.isRunning = false;
     }

@@ -13,7 +13,12 @@ import {
   formatArea,
   formatAngle,
 } from "@plainoss/core";
-import { Renderer3D, DARK_THEME, LIGHT_THEME } from "./canvas/renderer3d";
+import {
+  Renderer3D,
+  DARK_THEME,
+  LIGHT_THEME,
+  AR_THEME,
+} from "./canvas/renderer3d";
 import { WebXRManager } from "./xr/webxr";
 import { useTheme } from "./hooks/useTheme";
 import { Header } from "./components/Header";
@@ -33,10 +38,12 @@ export function App() {
   const [hoverPoint, setHoverPoint] = useState<Point3D | null>(null);
   const [snapToGrid, setSnapToGrid] = useState<boolean>(true);
 
-  // WebXR state
-  const [isARSupported, setIsARSupported] = useState<boolean>(false);
+  // WebXR & Camera Video Stream state
+  const [isARSupported, setIsARSupported] = useState<boolean>(true); // WebXR or Camera Passthrough
   const [isARActive, setIsARActive] = useState<boolean>(false);
   const xrManagerRef = useRef<WebXRManager | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
   // Dialogs & drawers
   const [isHelpOpen, setIsHelpOpen] = useState<boolean>(false);
@@ -57,6 +64,8 @@ export function App() {
   // Canvas & 3D Renderer references
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const rendererRef = useRef<Renderer3D | null>(null);
+
+  // Mouse & Touch gesture tracking
   const isDraggingRef = useRef<boolean>(false);
   const dragStartRef = useRef<{ x: number; y: number; isPan: boolean }>({
     x: 0,
@@ -64,6 +73,8 @@ export function App() {
     isPan: false,
   });
   const dragDistanceRef = useRef<number>(0);
+  const initialPinchDistRef = useRef<number | null>(null);
+  const initialCamDistRef = useRef<number>(4.5);
 
   // Toast helper
   const showToast = useCallback(
@@ -89,7 +100,9 @@ export function App() {
   // Check WebXR capabilities
   useEffect(() => {
     WebXRManager.checkSupport().then((cap) => {
-      setIsARSupported(cap.isSupported);
+      setIsARSupported(
+        cap.isSupported || !!navigator.mediaDevices?.getUserMedia,
+      );
     });
   }, []);
 
@@ -115,9 +128,14 @@ export function App() {
   // Update renderer theme & render
   useEffect(() => {
     if (!rendererRef.current) return;
-    rendererRef.current.theme = theme === "dark" ? DARK_THEME : LIGHT_THEME;
+    rendererRef.current.isARMode = isARActive;
+    if (isARActive) {
+      rendererRef.current.theme = AR_THEME;
+    } else {
+      rendererRef.current.theme = theme === "dark" ? DARK_THEME : LIGHT_THEME;
+    }
     rendererRef.current.render(points, hoverPoint, mode, unit, angleUnit);
-  }, [theme, points, hoverPoint, mode, unit, angleUnit]);
+  }, [theme, isARActive, points, hoverPoint, mode, unit, angleUnit]);
 
   // Point snap calculation
   const applySnap = (p: Point3D): Point3D => {
@@ -136,11 +154,9 @@ export function App() {
       const p = applySnap(rawPoint);
       setPoints((prev) => {
         if (mode === "distance" && prev.length >= 2) {
-          // In distance mode, 3rd point starts a new measurement pair
           return [p];
         }
         if (mode === "angle" && prev.length >= 3) {
-          // In angle mode, 4th point starts a new angle measurement
           return [p];
         }
         return [...prev, p];
@@ -251,36 +267,86 @@ export function App() {
     }
   };
 
-  // WebXR Toggle
+  // Start / Stop Universal AR Camera Stream & WebXR
+  const stopCameraStream = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+  };
+
   const handleToggleAR = async () => {
     if (isARActive) {
+      // Exit AR
+      stopCameraStream();
       if (xrManagerRef.current) {
         await xrManagerRef.current.endSession();
       }
       setIsARActive(false);
-      showToast("Exited AR mode", "info");
+      showToast("Exited AR Camera mode", "info");
     } else {
+      // Start AR Camera stream
       try {
-        const mgr = new WebXRManager();
-        xrManagerRef.current = mgr;
-        await mgr.startARSession(
-          (hitPoint) => {
-            setHoverPoint(hitPoint);
-          },
-          () => {
-            setIsARActive(false);
-            showToast("AR session ended", "info");
-          },
-        );
+        // 1. Request environment camera video stream
+        if (navigator.mediaDevices?.getUserMedia) {
+          try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+              video: {
+                facingMode: { ideal: "environment" },
+                width: { ideal: 1920 },
+                height: { ideal: 1080 },
+              },
+              audio: false,
+            });
+            streamRef.current = stream;
+            if (videoRef.current) {
+              videoRef.current.srcObject = stream;
+              await videoRef.current.play();
+            }
+          } catch (camErr: any) {
+            console.warn("Camera stream request fallback:", camErr);
+          }
+        }
+
+        // 2. Start WebXR if available
+        const xrCap = await WebXRManager.checkSupport();
+        if (xrCap.isSupported) {
+          const mgr = new WebXRManager();
+          xrManagerRef.current = mgr;
+          await mgr.startARSession(
+            (hitPoint) => {
+              setHoverPoint(hitPoint);
+            },
+            () => {
+              setIsARActive(false);
+              stopCameraStream();
+              showToast("AR session ended", "info");
+            },
+          );
+        }
+
         setIsARActive(true);
-        showToast("WebXR AR active. Tap to place measurements.", "success");
+        showToast(
+          "AR Camera active! Tap anywhere to place measurement points.",
+          "success",
+        );
       } catch (err: any) {
-        showToast(err.message || "Could not start AR session", "warning");
+        showToast(err.message || "Could not start AR camera", "warning");
       }
     }
   };
 
-  // Mouse & Touch Interaction Handlers
+  // Clean up camera on unmount
+  useEffect(() => {
+    return () => {
+      stopCameraStream();
+    };
+  }, []);
+
+  // Mouse Interaction Handlers
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     isDraggingRef.current = true;
     dragDistanceRef.current = 0;
@@ -305,7 +371,6 @@ export function App() {
       dragDistanceRef.current += Math.hypot(dx, dy);
 
       if (dragStartRef.current.isPan) {
-        // Pan camera target
         const panSpeed = 0.005 * renderer.camera.distance;
         const cosY = Math.cos(renderer.camera.yaw);
         const sinY = Math.sin(renderer.camera.yaw);
@@ -313,7 +378,6 @@ export function App() {
         renderer.camera.target.z += dx * sinY * panSpeed;
         renderer.camera.target.y += dy * panSpeed;
       } else {
-        // Orbit camera yaw and pitch
         renderer.camera.yaw += dx * 0.008;
         renderer.camera.pitch = Math.max(
           -Math.PI / 2.2,
@@ -325,7 +389,6 @@ export function App() {
       dragStartRef.current.y = e.clientY;
       renderer.render(points, hoverPoint, mode, unit, angleUnit);
     } else {
-      // Calculate ground intersection for hover reticle
       const ground = renderer.unprojectGround(mouseX, mouseY);
       if (ground) {
         setHoverPoint(applySnap(ground));
@@ -343,7 +406,6 @@ export function App() {
       renderer &&
       canvasRef.current
     ) {
-      // Click detected! Place point on ground
       const rect = canvasRef.current.getBoundingClientRect();
       const ground = renderer.unprojectGround(
         e.clientX - rect.left,
@@ -366,6 +428,142 @@ export function App() {
       Math.min(25, renderer.camera.distance + zoomDelta),
     );
     renderer.render(points, hoverPoint, mode, unit, angleUnit);
+  };
+
+  // Touch Interaction Handlers (Full Mobile Touch Support)
+  const handleTouchStart = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    const renderer = rendererRef.current;
+    if (!renderer) return;
+
+    if (e.touches.length === 1) {
+      const touch = e.touches[0];
+      if (!touch) return;
+      isDraggingRef.current = true;
+      dragDistanceRef.current = 0;
+      dragStartRef.current = {
+        x: touch.clientX,
+        y: touch.clientY,
+        isPan: false,
+      };
+
+      // Set hover position immediately on touch down
+      if (canvasRef.current) {
+        const rect = canvasRef.current.getBoundingClientRect();
+        const ground = renderer.unprojectGround(
+          touch.clientX - rect.left,
+          touch.clientY - rect.top,
+        );
+        if (ground) {
+          setHoverPoint(applySnap(ground));
+        }
+      }
+    } else if (e.touches.length === 2) {
+      // 2 fingers: Pinch to zoom & 2-finger pan
+      const t1 = e.touches[0];
+      const t2 = e.touches[1];
+      if (t1 && t2) {
+        initialPinchDistRef.current = Math.hypot(
+          t2.clientX - t1.clientX,
+          t2.clientY - t1.clientY,
+        );
+        initialCamDistRef.current = renderer.camera.distance;
+        dragStartRef.current = {
+          x: (t1.clientX + t2.clientX) / 2,
+          y: (t1.clientY + t2.clientY) / 2,
+          isPan: true,
+        };
+      }
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    const renderer = rendererRef.current;
+    if (!renderer || !canvasRef.current) return;
+
+    if (e.touches.length === 1 && isDraggingRef.current) {
+      const touch = e.touches[0];
+      if (!touch) return;
+      const dx = touch.clientX - dragStartRef.current.x;
+      const dy = touch.clientY - dragStartRef.current.y;
+      dragDistanceRef.current += Math.hypot(dx, dy);
+
+      renderer.camera.yaw += dx * 0.009;
+      renderer.camera.pitch = Math.max(
+        -Math.PI / 2.2,
+        Math.min(Math.PI / 2.2, renderer.camera.pitch + dy * 0.009),
+      );
+
+      dragStartRef.current.x = touch.clientX;
+      dragStartRef.current.y = touch.clientY;
+
+      const rect = canvasRef.current.getBoundingClientRect();
+      const ground = renderer.unprojectGround(
+        touch.clientX - rect.left,
+        touch.clientY - rect.top,
+      );
+      if (ground) {
+        setHoverPoint(applySnap(ground));
+      }
+
+      renderer.render(points, hoverPoint, mode, unit, angleUnit);
+    } else if (e.touches.length === 2 && initialPinchDistRef.current !== null) {
+      // Pinch to zoom
+      const t1 = e.touches[0];
+      const t2 = e.touches[1];
+      if (t1 && t2) {
+        const currentDist = Math.hypot(
+          t2.clientX - t1.clientX,
+          t2.clientY - t1.clientY,
+        );
+        const scale = initialPinchDistRef.current / Math.max(currentDist, 10);
+        renderer.camera.distance = Math.max(
+          1,
+          Math.min(25, initialCamDistRef.current * scale),
+        );
+
+        // 2-finger pan
+        const midX = (t1.clientX + t2.clientX) / 2;
+        const midY = (t1.clientY + t2.clientY) / 2;
+        const dx = midX - dragStartRef.current.x;
+        const dy = midY - dragStartRef.current.y;
+        const panSpeed = 0.005 * renderer.camera.distance;
+        const cosY = Math.cos(renderer.camera.yaw);
+        const sinY = Math.sin(renderer.camera.yaw);
+        renderer.camera.target.x -= dx * cosY * panSpeed;
+        renderer.camera.target.z += dx * sinY * panSpeed;
+        renderer.camera.target.y += dy * panSpeed;
+
+        dragStartRef.current.x = midX;
+        dragStartRef.current.y = midY;
+
+        renderer.render(points, hoverPoint, mode, unit, angleUnit);
+      }
+    }
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    const renderer = rendererRef.current;
+    if (
+      isDraggingRef.current &&
+      dragDistanceRef.current < 10 &&
+      renderer &&
+      canvasRef.current
+    ) {
+      // Tap detected! Place point on ground or at reticle
+      const touch = e.changedTouches[0];
+      if (touch) {
+        const rect = canvasRef.current.getBoundingClientRect();
+        const ground = renderer.unprojectGround(
+          touch.clientX - rect.left,
+          touch.clientY - rect.top,
+        );
+        if (ground) {
+          handleAddPoint(ground);
+        }
+      }
+    }
+    isDraggingRef.current = false;
+    initialPinchDistRef.current = null;
   };
 
   // Keyboard navigation
@@ -394,8 +592,26 @@ export function App() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [hoverPoint, handleAddPoint, handleUndo, handleClear]);
 
+  // Handle mobile action button to drop point at center/reticle
+  const handleDropPointCenter = () => {
+    const renderer = rendererRef.current;
+    if (!renderer || !canvasRef.current) return;
+
+    if (hoverPoint) {
+      handleAddPoint(hoverPoint);
+      showToast("Placed 3D anchor point", "info");
+    } else {
+      const rect = canvasRef.current.getBoundingClientRect();
+      const center = renderer.unprojectGround(rect.width / 2, rect.height / 2);
+      if (center) {
+        handleAddPoint(center);
+        showToast("Placed 3D anchor point", "info");
+      }
+    }
+  };
+
   return (
-    <div className="app-layout">
+    <div className={`app-layout ${isARActive ? "ar-active" : ""}`}>
       {/* Top Header */}
       <Header
         theme={theme}
@@ -408,17 +624,69 @@ export function App() {
         historyCount={history.length}
       />
 
-      {/* Main Canvas Viewport */}
-      <main className="viewport-container">
+      {/* Main Viewport & AR Camera Feed */}
+      <main className={`viewport-container ${isARActive ? "ar-active" : ""}`}>
+        {/* Live Camera Video Feed in AR Mode */}
+        <video
+          ref={videoRef}
+          className={`camera-video-stream ${isARActive ? "active" : ""}`}
+          autoPlay
+          playsInline
+          muted
+        />
+
+        {/* 3D Measurement Canvas */}
         <canvas
           ref={canvasRef}
           className="canvas-3d"
+          onPointerDown={(e) => {
+            if (e.pointerType === "mouse") {
+              handleMouseDown(e as any);
+            }
+          }}
+          onPointerMove={(e) => {
+            if (e.pointerType === "mouse") {
+              handleMouseMove(e as any);
+            }
+          }}
+          onPointerUp={(e) => {
+            if (e.pointerType === "mouse") {
+              handleMouseUp(e as any);
+            }
+          }}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
           onWheel={handleWheel}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+          onTouchCancel={() => {
+            isDraggingRef.current = false;
+            initialPinchDistRef.current = null;
+          }}
+          onClick={(e) => {
+            const renderer = rendererRef.current;
+            if (!renderer || !canvasRef.current) return;
+            const rect = canvasRef.current.getBoundingClientRect();
+            const ground = renderer.unprojectGround(
+              e.clientX - rect.left,
+              e.clientY - rect.top,
+            );
+            if (ground) {
+              handleAddPoint(ground);
+            }
+          }}
           onContextMenu={(e) => e.preventDefault()}
         />
+
+        {/* Center Spatial Reticle in AR Mode */}
+        {isARActive && (
+          <div className="ar-center-reticle" aria-hidden="true">
+            <div className="reticle-outer-ring" />
+            <div className="reticle-center-dot" />
+          </div>
+        )}
 
         {/* Floating Measurement Overlay Cards */}
         <div className="overlay-metrics-wrapper">
@@ -431,6 +699,19 @@ export function App() {
             onCopy={handleCopy}
             onSave={handleSaveMeasurement}
           />
+        </div>
+
+        {/* Mobile Tactile Point Drop Trigger */}
+        <div className="overlay-drop-point-wrapper">
+          <button
+            className="btn-drop-point-fab"
+            onClick={handleDropPointCenter}
+            aria-label="Drop 3D Measurement Point"
+            title="Drop 3D Measurement Point at Reticle"
+          >
+            <span className="fab-inner">📍</span>
+            <span className="fab-label">Drop Point</span>
+          </button>
         </div>
 
         {/* Floating Bottom Toolbar */}
@@ -452,9 +733,11 @@ export function App() {
         {/* Interactive Helper Hint */}
         <div className="canvas-hint" aria-hidden="true">
           <span>
-            {points.length === 0
-              ? "👆 Click anywhere on grid to place Point 1"
-              : "✨ Click to place next point or drag to orbit"}
+            {isARActive
+              ? '📷 AR Mode: Tap screen or "Drop Point" to anchor measurements'
+              : points.length === 0
+                ? "👆 Tap / Click anywhere on grid to place Point 1"
+                : "✨ Tap to place next point or drag with 1-2 fingers"}
           </span>
         </div>
       </main>

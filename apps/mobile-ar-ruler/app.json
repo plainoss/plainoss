@@ -1,0 +1,20 @@
+{
+  "expo": {
+    "name": "Ar Ruler",
+    "slug": "ar-ruler",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "app.plainoss.arruler"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0a0a0c"
+      },
+      "package": "app.plainoss.arruler"
+    }
+  }
+}

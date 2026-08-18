@@ -13,3 +13,7 @@ export interface ToolMetadata {
 }
 
 export const PLAINOSS_VERSION = "0.1.0";
+
+// Re-export tools
+export * as arRuler from "./ar-ruler/index";
+export * from "./ar-ruler/index";

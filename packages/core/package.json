@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Pure calculation engines, algorithms, and math for PlainOSS tools",
+  "type": "module",
   "license": "MIT",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
@@ -18,7 +19,7 @@
   },
   "devDependencies": {
     "@plainoss/tsconfig": "workspace:*",
-    "typescript": "^5.7.0",
-    "vitest": "^3.0.0"
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
   }
 }

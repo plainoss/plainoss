@@ -104,6 +104,10 @@ export const AR_THEME: RenderTheme = {
 export class Renderer3D {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
+  // Caching viewport dimensions prevents DOM layout thrashing inside tight projection render loops
+  private viewportWidth: number = 0;
+  private viewportHeight: number = 0;
+
   public camera: CameraState = {
     yaw: Math.PI / 4,
     pitch: Math.PI / 6,
@@ -126,10 +130,21 @@ export class Renderer3D {
   public resize(): void {
     const dpr = window.devicePixelRatio || 1;
     const rect = this.canvas.getBoundingClientRect();
+    this.viewportWidth = rect.width;
+    this.viewportHeight = rect.height;
     this.canvas.width = Math.floor(rect.width * dpr);
     this.canvas.height = Math.floor(rect.height * dpr);
     this.ctx.scale(dpr, dpr);
     this.fov = Math.max(rect.width, rect.height) * 0.9;
+  }
+
+  private getViewport(): { width: number; height: number } {
+    if (this.viewportWidth === 0 || this.viewportHeight === 0) {
+      const rect = this.canvas.getBoundingClientRect();
+      this.viewportWidth = rect.width || this.canvas.width || 1;
+      this.viewportHeight = rect.height || this.canvas.height || 1;
+    }
+    return { width: this.viewportWidth, height: this.viewportHeight };
   }
 
   /**
@@ -137,9 +152,7 @@ export class Renderer3D {
    * Returns null if behind the camera near plane.
    */
   public project(p: Point3D): { x: number; y: number; depth: number } | null {
-    const rect = this.canvas.getBoundingClientRect();
-    const width = rect.width;
-    const height = rect.height;
+    const { width, height } = this.getViewport();
 
     // 1. Target relative
     const rx = p.x - this.camera.target.x;
@@ -180,9 +193,7 @@ export class Renderer3D {
     screenY: number,
     planeY: number = 0,
   ): Point3D | null {
-    const rect = this.canvas.getBoundingClientRect();
-    const width = rect.width;
-    const height = rect.height;
+    const { width, height } = this.getViewport();
 
     const normX = (screenX - width / 2) / this.fov;
     const normY = -(screenY - height / 2) / this.fov;
@@ -239,9 +250,7 @@ export class Renderer3D {
     screenY: number,
     distanceMeters: number = 1.5,
   ): Point3D {
-    const rect = this.canvas.getBoundingClientRect();
-    const width = rect.width || 1;
-    const height = rect.height || 1;
+    const { width, height } = this.getViewport();
 
     const normX = (screenX - width / 2) / this.fov;
     const normY = -(screenY - height / 2) / this.fov;
@@ -290,6 +299,8 @@ export class Renderer3D {
     angleUnit: AngleUnit,
   ): void {
     const rect = this.canvas.getBoundingClientRect();
+    this.viewportWidth = rect.width;
+    this.viewportHeight = rect.height;
     const ctx = this.ctx;
 
     ctx.clearRect(0, 0, rect.width, rect.height);

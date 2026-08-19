@@ -34,7 +34,14 @@ const MODES: {
   { id: "angle", label: "Angle", icon: Compass },
 ];
 
-const UNITS: DistanceUnit[] = ["m", "cm", "mm", "in", "ft", "yd"];
+const UNITS: { id: DistanceUnit; label: string }[] = [
+  { id: "m", label: "Meters" },
+  { id: "cm", label: "Centimeters" },
+  { id: "mm", label: "Millimeters" },
+  { id: "in", label: "Inches" },
+  { id: "ft", label: "Feet" },
+  { id: "yd", label: "Yards" },
+];
 
 export const Toolbar: React.FC<ToolbarProps> = ({
   mode,
@@ -90,13 +97,15 @@ export const Toolbar: React.FC<ToolbarProps> = ({
       >
         {UNITS.map((u) => (
           <button
-            key={u}
+            key={u.id}
             role="radio"
-            aria-checked={unit === u}
-            className={`btn-segment btn-unit ${unit === u ? "active" : ""}`}
-            onClick={() => onSelectUnit(u)}
+            aria-checked={unit === u.id}
+            aria-label={u.label}
+            title={u.label}
+            className={`btn-segment btn-unit ${unit === u.id ? "active" : ""}`}
+            onClick={() => onSelectUnit(u.id)}
           >
-            {u}
+            {u.id}
           </button>
         ))}
       </div>

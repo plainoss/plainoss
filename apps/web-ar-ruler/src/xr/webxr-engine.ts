@@ -40,6 +40,10 @@ export class WebXREngine {
   private quadBuffer!: WebGLBuffer;
   private pointCloudBuffer!: WebGLBuffer;
 
+  // Cached static reticle mesh geometry Float32Arrays to avoid per-frame allocations & trig math
+  private reticleTorusVerts!: Float32Array;
+  private reticleDotVerts!: Float32Array;
+
   // Text Texture for 3D In-AR Measurement Label
   private textCanvas: HTMLCanvasElement;
   private textCtx: CanvasRenderingContext2D;
@@ -185,6 +189,14 @@ export class WebXREngine {
 
     this.pointCloudProgram = this.createProgram(vsPointCloud, fsPointCloud);
     this.pointCloudBuffer = gl.createBuffer()!;
+
+    // Pre-calculate static placement reticle mesh geometry
+    this.reticleTorusVerts = new Float32Array(
+      this.createTorusMesh(0.06, 0.0035, 28, 8),
+    );
+    this.reticleDotVerts = new Float32Array(
+      this.createSphereMesh({ x: 0, y: 0, z: 0 }, 0.006, 8),
+    );
   }
 
   /**
@@ -653,23 +665,13 @@ export class WebXREngine {
         gl.uniform4f(uColor, 0.22, 0.74, 0.97, 0.95);
       }
 
-      // Elegant clean circular reticle ring ($6\text{cm}$ radius)
-      const torusVerts = this.createTorusMesh(0.06, 0.0035, 28, 8);
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        new Float32Array(torusVerts),
-        gl.DYNAMIC_DRAW,
-      );
-      gl.drawArrays(gl.TRIANGLES, 0, torusVerts.length / 3);
+      // Elegant clean circular reticle ring (6cm radius) - pre-computed static mesh
+      gl.bufferData(gl.ARRAY_BUFFER, this.reticleTorusVerts, gl.STATIC_DRAW);
+      gl.drawArrays(gl.TRIANGLES, 0, this.reticleTorusVerts.length / 3);
 
-      // Clean center targeting dot ($6\text{mm}$)
-      const dotVerts = this.createSphereMesh({ x: 0, y: 0, z: 0 }, 0.006, 8);
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        new Float32Array(dotVerts),
-        gl.DYNAMIC_DRAW,
-      );
-      gl.drawArrays(gl.TRIANGLES, 0, dotVerts.length / 3);
+      // Clean center targeting dot (6mm radius) - pre-computed static mesh
+      gl.bufferData(gl.ARRAY_BUFFER, this.reticleDotVerts, gl.STATIC_DRAW);
+      gl.drawArrays(gl.TRIANGLES, 0, this.reticleDotVerts.length / 3);
 
       gl.uniformMatrix4fv(uModel, false, identity);
     }

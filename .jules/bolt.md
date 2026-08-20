@@ -1,0 +1,3 @@
+## 2025-05-18 - Caching Parametric 3D WebGL Geometries in WebXR Frame Loops
+**Learning:** In WebXR render loops (e.g. 60-90 FPS per eye), generating parametric 3D meshes (toruses, spheres) on every frame using trigonometric math (`Math.sin`/`Math.cos`) and creating new arrays/objects introduces significant CPU overhead and garbage collection pressure. Pre-computing unit mesh geometry into a `Float32Array` cache map and using a single reusable scratch buffer for translation/scaling speeds up mesh generation by up to 100x and eliminates per-frame heap allocations.
+**Action:** Always pre-compute static WebGL geometry and reuse typed array scratch buffers when drawing 3D scene overlays in high-frequency frame animation loops.

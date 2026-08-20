@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { X, Copy, Trash2, Ruler } from "lucide-react";
 import { MeasurementRecord } from "@plainoss/core";
 
@@ -21,6 +21,17 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
   onCopyRecord,
   onCopyAll,
 }) => {
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   return (
@@ -65,7 +76,7 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
         <div className="drawer-list">
           {records.length === 0 ? (
             <div className="empty-state">
-              <span className="empty-icon">
+              <span className="empty-icon" aria-hidden="true">
                 <Ruler size={36} strokeWidth={1.5} />
               </span>
               <p>No saved measurements yet.</p>

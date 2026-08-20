@@ -60,6 +60,11 @@ export class WebXREngine {
   public hoveredHandleIndex: number | null = null;
   public suppressTapUntil: number = 0;
 
+  // Geometry cache to avoid re-generating parametric meshes & trig math on every frame
+  private torusCache = new Map<string, Float32Array>();
+  private sphereCache = new Map<string, Float32Array>();
+  private sphereScratchBuffer: Float32Array = new Float32Array(2000);
+
   constructor(canvas: HTMLCanvasElement, callbacks: XREngineCallbacks) {
     this.callbacks = callbacks;
 
@@ -654,21 +659,14 @@ export class WebXREngine {
       }
 
       // Elegant clean circular reticle ring ($6\text{cm}$ radius)
+      // Bolt optimization: use cached Float32Array directly to eliminate trig recalculation & GC
       const torusVerts = this.createTorusMesh(0.06, 0.0035, 28, 8);
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        new Float32Array(torusVerts),
-        gl.DYNAMIC_DRAW,
-      );
+      gl.bufferData(gl.ARRAY_BUFFER, torusVerts, gl.DYNAMIC_DRAW);
       gl.drawArrays(gl.TRIANGLES, 0, torusVerts.length / 3);
 
       // Clean center targeting dot ($6\text{mm}$)
       const dotVerts = this.createSphereMesh({ x: 0, y: 0, z: 0 }, 0.006, 8);
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        new Float32Array(dotVerts),
-        gl.DYNAMIC_DRAW,
-      );
+      gl.bufferData(gl.ARRAY_BUFFER, dotVerts, gl.DYNAMIC_DRAW);
       gl.drawArrays(gl.TRIANGLES, 0, dotVerts.length / 3);
 
       gl.uniformMatrix4fv(uModel, false, identity);
@@ -747,29 +745,17 @@ export class WebXREngine {
       if (isDragged) {
         gl.uniform4f(uColor, 0.13, 0.77, 0.36, 1.0); // Bright Green when dragging
         const verts = this.createSphereMesh(p, 0.024, 12);
-        gl.bufferData(
-          gl.ARRAY_BUFFER,
-          new Float32Array(verts),
-          gl.DYNAMIC_DRAW,
-        );
+        gl.bufferData(gl.ARRAY_BUFFER, verts, gl.DYNAMIC_DRAW);
         gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
       } else if (isHovered) {
         gl.uniform4f(uColor, 0.98, 0.75, 0.18, 1.0); // Large Golden Pulsing Handle
         const verts = this.createSphereMesh(p, 0.022, 12);
-        gl.bufferData(
-          gl.ARRAY_BUFFER,
-          new Float32Array(verts),
-          gl.DYNAMIC_DRAW,
-        );
+        gl.bufferData(gl.ARRAY_BUFFER, verts, gl.DYNAMIC_DRAW);
         gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
       } else {
         gl.uniform4f(uColor, 0.98, 0.75, 0.18, 0.9); // Normal Gold Anchor Sphere
         const verts = this.createSphereMesh(p, 0.016, 10);
-        gl.bufferData(
-          gl.ARRAY_BUFFER,
-          new Float32Array(verts),
-          gl.DYNAMIC_DRAW,
-        );
+        gl.bufferData(gl.ARRAY_BUFFER, verts, gl.DYNAMIC_DRAW);
         gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
       }
     }
@@ -876,78 +862,176 @@ export class WebXREngine {
     return verts;
   }
 
+  /**
+   * Bolt optimization: Caches sphere mesh geometry and returns typed Float32Array.
+   * Avoids expensive trigonometric recalculations and object allocations on every frame.
+   */
   private createSphereMesh(
     center: Point3D,
     radius: number,
     segments: number = 8,
-  ): number[] {
-    const verts: number[] = [];
-    for (let lat = 0; lat < segments; lat++) {
-      const theta1 = (lat / segments) * Math.PI;
-      const theta2 = ((lat + 1) / segments) * Math.PI;
+  ): Float32Array {
+    const key = `${radius}_${segments}`;
+    let base = this.sphereCache.get(key);
 
-      for (let lon = 0; lon < segments; lon++) {
-        const phi1 = (lon / segments) * Math.PI * 2;
-        const phi2 = ((lon + 1) / segments) * Math.PI * 2;
+    if (!base) {
+      const numTriangles = segments * segments * 2;
+      base = new Float32Array(numTriangles * 3 * 3);
+      let idx = 0;
 
-        const p1 = this.spherePoint(center, radius, theta1, phi1);
-        const p2 = this.spherePoint(center, radius, theta1, phi2);
-        const p3 = this.spherePoint(center, radius, theta2, phi1);
-        const p4 = this.spherePoint(center, radius, theta2, phi2);
+      for (let lat = 0; lat < segments; lat++) {
+        const theta1 = (lat / segments) * Math.PI;
+        const theta2 = ((lat + 1) / segments) * Math.PI;
+        const sinT1 = Math.sin(theta1),
+          cosT1 = Math.cos(theta1);
+        const sinT2 = Math.sin(theta2),
+          cosT2 = Math.cos(theta2);
 
-        verts.push(p1.x, p1.y, p1.z, p3.x, p3.y, p3.z, p2.x, p2.y, p2.z);
-        verts.push(p2.x, p2.y, p2.z, p3.x, p3.y, p3.z, p4.x, p4.y, p4.z);
+        for (let lon = 0; lon < segments; lon++) {
+          const phi1 = (lon / segments) * Math.PI * 2;
+          const phi2 = ((lon + 1) / segments) * Math.PI * 2;
+          const sinP1 = Math.sin(phi1),
+            cosP1 = Math.cos(phi1);
+          const sinP2 = Math.sin(phi2),
+            cosP2 = Math.cos(phi2);
+
+          const p1x = radius * sinT1 * cosP1;
+          const p1y = radius * cosT1;
+          const p1z = radius * sinT1 * sinP1;
+
+          const p2x = radius * sinT1 * cosP2;
+          const p2y = radius * cosT1;
+          const p2z = radius * sinT1 * sinP2;
+
+          const p3x = radius * sinT2 * cosP1;
+          const p3y = radius * cosT2;
+          const p3z = radius * sinT2 * sinP1;
+
+          const p4x = radius * sinT2 * cosP2;
+          const p4y = radius * cosT2;
+          const p4z = radius * sinT2 * sinP2;
+
+          // Triangle 1: p1 -> p3 -> p2
+          base[idx++] = p1x;
+          base[idx++] = p1y;
+          base[idx++] = p1z;
+          base[idx++] = p3x;
+          base[idx++] = p3y;
+          base[idx++] = p3z;
+          base[idx++] = p2x;
+          base[idx++] = p2y;
+          base[idx++] = p2z;
+
+          // Triangle 2: p2 -> p3 -> p4
+          base[idx++] = p2x;
+          base[idx++] = p2y;
+          base[idx++] = p2z;
+          base[idx++] = p3x;
+          base[idx++] = p3y;
+          base[idx++] = p3z;
+          base[idx++] = p4x;
+          base[idx++] = p4y;
+          base[idx++] = p4z;
+        }
       }
+      this.sphereCache.set(key, base);
     }
-    return verts;
+
+    if (center.x === 0 && center.y === 0 && center.z === 0) {
+      return base;
+    }
+
+    const len = base.length;
+    if (this.sphereScratchBuffer.length < len) {
+      this.sphereScratchBuffer = new Float32Array(len);
+    }
+
+    const cx = center.x,
+      cy = center.y,
+      cz = center.z;
+    for (let i = 0; i < len; i += 3) {
+      this.sphereScratchBuffer[i] = base[i]! + cx;
+      this.sphereScratchBuffer[i + 1] = base[i + 1]! + cy;
+      this.sphereScratchBuffer[i + 2] = base[i + 2]! + cz;
+    }
+    return this.sphereScratchBuffer.subarray(0, len);
   }
 
-  private spherePoint(
-    center: Point3D,
-    radius: number,
-    theta: number,
-    phi: number,
-  ): Point3D {
-    return {
-      x: center.x + radius * Math.sin(theta) * Math.cos(phi),
-      y: center.y + radius * Math.cos(theta),
-      z: center.z + radius * Math.sin(theta) * Math.sin(phi),
-    };
-  }
-
+  /**
+   * Bolt optimization: Caches torus reticle mesh geometry and returns typed Float32Array directly.
+   * Avoids expensive trigonometric recalculations and object allocations on every frame.
+   */
   private createTorusMesh(
     radius: number,
     tubeRadius: number,
     radialSegments: number = 28,
     tubularSegments: number = 8,
-  ): number[] {
-    const verts: number[] = [];
+  ): Float32Array {
+    const key = `${radius}_${tubeRadius}_${radialSegments}_${tubularSegments}`;
+    let cached = this.torusCache.get(key);
+    if (cached) return cached;
+
+    const numTriangles = radialSegments * tubularSegments * 2;
+    cached = new Float32Array(numTriangles * 3 * 3);
+    let idx = 0;
 
     for (let j = 0; j < radialSegments; j++) {
       const u1 = (j / radialSegments) * Math.PI * 2;
       const u2 = ((j + 1) / radialSegments) * Math.PI * 2;
+      const cosU1 = Math.cos(u1),
+        sinU1 = Math.sin(u1);
+      const cosU2 = Math.cos(u2),
+        sinU2 = Math.sin(u2);
 
       for (let i = 0; i < tubularSegments; i++) {
         const v1 = (i / tubularSegments) * Math.PI * 2;
         const v2 = ((i + 1) / tubularSegments) * Math.PI * 2;
+        const cosV1 = Math.cos(v1),
+          sinV1 = Math.sin(v1);
+        const cosV2 = Math.cos(v2),
+          sinV2 = Math.sin(v2);
 
-        const p1 = this.torusPoint(u1, v1, radius, tubeRadius);
-        const p2 = this.torusPoint(u2, v1, radius, tubeRadius);
-        const p3 = this.torusPoint(u1, v2, radius, tubeRadius);
-        const p4 = this.torusPoint(u2, v2, radius, tubeRadius);
+        const r1 = radius + tubeRadius * cosV1;
+        const r2 = radius + tubeRadius * cosV2;
 
-        verts.push(p1.x, p1.y, p1.z, p3.x, p3.y, p3.z, p2.x, p2.y, p2.z);
-        verts.push(p2.x, p2.y, p2.z, p3.x, p3.y, p3.z, p4.x, p4.y, p4.z);
+        const p1x = r1 * cosU1,
+          p1y = tubeRadius * sinV1,
+          p1z = r1 * sinU1;
+        const p2x = r1 * cosU2,
+          p2y = tubeRadius * sinV1,
+          p2z = r1 * sinU2;
+        const p3x = r2 * cosU1,
+          p3y = tubeRadius * sinV2,
+          p3z = r2 * sinU1;
+        const p4x = r2 * cosU2,
+          p4y = tubeRadius * sinV2,
+          p4z = r2 * sinU2;
+
+        // Triangle 1: p1 -> p3 -> p2
+        cached[idx++] = p1x;
+        cached[idx++] = p1y;
+        cached[idx++] = p1z;
+        cached[idx++] = p3x;
+        cached[idx++] = p3y;
+        cached[idx++] = p3z;
+        cached[idx++] = p2x;
+        cached[idx++] = p2y;
+        cached[idx++] = p2z;
+
+        // Triangle 2: p2 -> p3 -> p4
+        cached[idx++] = p2x;
+        cached[idx++] = p2y;
+        cached[idx++] = p2z;
+        cached[idx++] = p3x;
+        cached[idx++] = p3y;
+        cached[idx++] = p3z;
+        cached[idx++] = p4x;
+        cached[idx++] = p4y;
+        cached[idx++] = p4z;
       }
     }
 
-    return verts;
-  }
-
-  private torusPoint(u: number, v: number, r: number, tubeR: number): Point3D {
-    const x = (r + tubeR * Math.cos(v)) * Math.cos(u);
-    const y = tubeR * Math.sin(v);
-    const z = (r + tubeR * Math.cos(v)) * Math.sin(u);
-    return { x, y, z };
+    this.torusCache.set(key, cached);
+    return cached;
   }
 }

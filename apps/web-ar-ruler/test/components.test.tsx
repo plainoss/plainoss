@@ -32,7 +32,7 @@ describe("Escape key accessibility for modals and drawers", () => {
         onClearAll={vi.fn()}
         onCopyRecord={vi.fn()}
         onCopyAll={vi.fn()}
-      />
+      />,
     );
 
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));

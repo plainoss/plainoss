@@ -22,13 +22,15 @@ export const ToastContainer: React.FC<ToastProps> = ({ toasts, onDismiss }) => {
       aria-live="polite"
     >
       {toasts.map((t) => (
-        <div
+        <button
           key={t.id}
+          type="button"
           className={`toast toast-${t.type || "info"}`}
           onClick={() => onDismiss(t.id)}
+          aria-label={`Dismiss notification: ${t.text}`}
         >
           <span>{t.text}</span>
-        </div>
+        </button>
       ))}
     </div>
   );

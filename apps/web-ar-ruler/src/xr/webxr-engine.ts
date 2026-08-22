@@ -55,6 +55,10 @@ export class WebXREngine {
   // Room-Scale Surface Plane Tracking
   private detectedGroundY: number | null = null;
 
+  // Pre-allocated Float32Array buffer for WebXR light-dot surface grid to avoid GC churn per frame
+  // Max radius 3.2m, spacing 0.15m => 44x44 grid = ~1936 points max * 4 floats = 7744 floats
+  private roomPlaneGridBuffer: Float32Array = new Float32Array(44 * 44 * 4);
+
   // Handle Editing State (Moving existing points in AR space)
   public draggedPointIndex: number | null = null;
   public hoveredHandleIndex: number | null = null;
@@ -189,8 +193,10 @@ export class WebXREngine {
 
   /**
    * Generates a high-visibility room-scale planar grid of light dots across the entire detected physical floor.
+   * Optimized: Reuses pre-allocated Float32Array buffer, uses squared distance checks, and early-exits outer loop
+   * to eliminate garbage collection overhead in high-frequency 60/90 FPS WebXR animation loops.
    */
-  private generateRoomPlaneGrid(timeSec: number, camPos: Point3D): number[] {
+  private generateRoomPlaneGrid(timeSec: number, camPos: Point3D): Float32Array {
     const groundY =
       this.reticlePosition !== null
         ? this.reticlePosition.y
@@ -198,37 +204,48 @@ export class WebXREngine {
           ? this.detectedGroundY
           : camPos.y - 0.65;
 
-    const dots: number[] = [];
+    const buffer = this.roomPlaneGridBuffer;
     const spacing = 0.15; // 15cm grid pitch
     const maxRadius = 3.2; // 3.2m radius
+    const maxRadiusSq = maxRadius * maxRadius;
 
     const snapX = Math.round(camPos.x / spacing) * spacing;
     const snapZ = Math.round(camPos.z / spacing) * spacing;
     const steps = Math.floor(maxRadius / spacing);
 
-    for (let ix = -steps; ix <= steps; ix++) {
-      for (let iz = -steps; iz <= steps; iz++) {
-        const wx = snapX + ix * spacing;
-        const wz = snapZ + iz * spacing;
+    let offset = 0;
 
-        const dx = wx - camPos.x;
+    for (let ix = -steps; ix <= steps; ix++) {
+      const wx = snapX + ix * spacing;
+      const dx = wx - camPos.x;
+      const dx2 = dx * dx;
+      if (dx2 > maxRadiusSq) continue;
+
+      for (let iz = -steps; iz <= steps; iz++) {
+        const wz = snapZ + iz * spacing;
         const dz = wz - camPos.z;
-        const distFromCam = Math.hypot(dx, dz);
-        if (distFromCam > maxRadius) continue;
+        const distSq = dx2 + dz * dz;
+        if (distSq > maxRadiusSq) continue;
+
+        const distFromCam = Math.sqrt(distSq);
 
         // Bright, high-visibility radial falloff & subtle ripple
-        const radialFalloff = Math.max(0, 1.0 - distFromCam / maxRadius);
+        const radialFalloff = 1.0 - distFromCam / maxRadius;
         const subtleWave =
           0.75 + 0.25 * Math.sin(distFromCam * 6.0 - timeSec * 2.0);
-        const alpha = Math.min(1.0, radialFalloff * subtleWave * 0.85);
+        const alpha = radialFalloff * subtleWave * 0.85;
 
         if (alpha < 0.04) continue;
 
-        dots.push(wx, groundY, wz, alpha);
+        buffer[offset] = wx;
+        buffer[offset + 1] = groundY;
+        buffer[offset + 2] = wz;
+        buffer[offset + 3] = alpha < 1.0 ? alpha : 1.0;
+        offset += 4;
       }
     }
 
-    return dots;
+    return buffer.subarray(0, offset);
   }
 
   private createProgram(vsSource: string, fsSource: string): WebGLProgram {
@@ -566,7 +583,7 @@ export class WebXREngine {
   private renderScene(
     projectionMatrix: Float32Array,
     viewMatrix: Float32Array,
-    roomGridDots: number[],
+    roomGridDots: Float32Array,
   ): void {
     const gl = this.gl;
     gl.enable(gl.DEPTH_TEST);
@@ -599,7 +616,7 @@ export class WebXREngine {
       gl.bindBuffer(gl.ARRAY_BUFFER, this.pointCloudBuffer);
       gl.bufferData(
         gl.ARRAY_BUFFER,
-        new Float32Array(roomGridDots),
+        roomGridDots,
         gl.DYNAMIC_DRAW,
       );
 

@@ -196,7 +196,10 @@ export class WebXREngine {
    * Optimized: Reuses pre-allocated Float32Array buffer, uses squared distance checks, and early-exits outer loop
    * to eliminate garbage collection overhead in high-frequency 60/90 FPS WebXR animation loops.
    */
-  private generateRoomPlaneGrid(timeSec: number, camPos: Point3D): Float32Array {
+  private generateRoomPlaneGrid(
+    timeSec: number,
+    camPos: Point3D,
+  ): Float32Array {
     const groundY =
       this.reticlePosition !== null
         ? this.reticlePosition.y
@@ -614,11 +617,7 @@ export class WebXREngine {
       gl.uniformMatrix4fv(uView, false, viewMatrix);
 
       gl.bindBuffer(gl.ARRAY_BUFFER, this.pointCloudBuffer);
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        roomGridDots,
-        gl.DYNAMIC_DRAW,
-      );
+      gl.bufferData(gl.ARRAY_BUFFER, roomGridDots, gl.DYNAMIC_DRAW);
 
       const posAttr = gl.getAttribLocation(this.pointCloudProgram, "aPosition");
       const alphaAttr = gl.getAttribLocation(this.pointCloudProgram, "aAlpha");

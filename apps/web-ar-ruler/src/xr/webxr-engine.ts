@@ -12,6 +12,11 @@ import {
   DistanceUnit,
 } from "@plainoss/core";
 
+// Pre-allocated identity matrix to avoid per-frame Float32Array allocations in 60/120 FPS WebXR render loop
+const IDENTITY_MATRIX = new Float32Array([
+  1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1,
+]);
+
 export interface XREngineCallbacks {
   onPointPlaced: (point: Point3D, points: Point3D[]) => void;
   onSessionStarted: () => void;
@@ -573,9 +578,8 @@ export class WebXREngine {
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
-    const identity = new Float32Array([
-      1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1,
-    ]);
+    // Reusing pre-allocated static IDENTITY_MATRIX constant to eliminate GC pressure in WebXR render loop
+    const identity = IDENTITY_MATRIX;
 
     // ==========================================
     // 1. RENDER SCANNING LIGHT-DOT SURFACE GRID (Active ONLY while scanning for surfaces)

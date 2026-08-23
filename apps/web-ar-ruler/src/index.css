@@ -477,6 +477,14 @@ body {
   pointer-events: auto;
   text-align: center;
   animation: slideIn 0.2s ease forwards;
+  cursor: pointer;
+  font-family: inherit;
+  outline: none;
+}
+
+.toast:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .toast-success {

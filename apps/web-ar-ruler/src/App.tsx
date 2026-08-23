@@ -254,8 +254,15 @@ export function App() {
         <div
           className="fullscreen-tap-launcher"
           onClick={handleStartAR}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              handleStartAR();
+            }
+          }}
           role="button"
           tabIndex={0}
+          aria-label="Start AR Ruler"
         >
           <div className="tap-launcher-content">
             <div className="pulsing-ar-badge">

@@ -16,11 +16,7 @@ export const ToastContainer: React.FC<ToastProps> = ({ toasts, onDismiss }) => {
   if (toasts.length === 0) return null;
 
   return (
-    <div
-      className="toast-container"
-      role="region"
-      aria-label="Notifications"
-    >
+    <div className="toast-container" role="region" aria-label="Notifications">
       {toasts.map((t) => {
         const isWarning = t.type === "warning";
         return (

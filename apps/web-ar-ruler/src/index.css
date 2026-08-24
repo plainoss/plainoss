@@ -498,7 +498,9 @@ body {
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  transition: opacity 0.15s ease, background-color 0.15s ease;
+  transition:
+    opacity 0.15s ease,
+    background-color 0.15s ease;
 }
 
 .toast-dismiss-btn:hover,

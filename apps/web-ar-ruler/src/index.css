@@ -468,15 +468,46 @@ body {
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border: 1px solid rgba(255, 255, 255, 0.2);
-  padding: 0.65rem 1rem;
+  padding: 0.5rem 0.75rem 0.5rem 1rem;
   border-radius: var(--radius-full);
   font-size: 0.85rem;
   font-weight: 600;
   color: #ffffff;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
   pointer-events: auto;
-  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
   animation: slideIn 0.2s ease forwards;
+}
+
+.toast-text {
+  flex: 1;
+  text-align: center;
+}
+
+.toast-dismiss-btn {
+  background: transparent;
+  border: none;
+  color: currentColor;
+  opacity: 0.8;
+  cursor: pointer;
+  padding: 0.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition:
+    opacity 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.toast-dismiss-btn:hover,
+.toast-dismiss-btn:focus-visible {
+  opacity: 1;
+  background-color: rgba(255, 255, 255, 0.15);
+  outline: none;
 }
 
 .toast-success {

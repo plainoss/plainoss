@@ -672,18 +672,10 @@ export class WebXREngine {
 
       // Performance optimization: Use cached Float32Arrays for static reticle ring & dot
       // Avoids creating JS arrays and TypedArrays every frame in high-frequency AR loop
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        this.cachedTorusVerts,
-        gl.STATIC_DRAW,
-      );
+      gl.bufferData(gl.ARRAY_BUFFER, this.cachedTorusVerts, gl.STATIC_DRAW);
       gl.drawArrays(gl.TRIANGLES, 0, this.cachedTorusVerts.length / 3);
 
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        this.cachedDotVerts,
-        gl.STATIC_DRAW,
-      );
+      gl.bufferData(gl.ARRAY_BUFFER, this.cachedDotVerts, gl.STATIC_DRAW);
       gl.drawArrays(gl.TRIANGLES, 0, this.cachedDotVerts.length / 3);
 
       gl.uniformMatrix4fv(uModel, false, identity);

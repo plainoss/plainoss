@@ -46,6 +46,10 @@ export class WebXREngine {
   private textTexture!: WebGLTexture;
   private lastRenderedText: string = "";
 
+  // Pre-computed static reticle mesh buffers for per-frame 60/90/120 FPS rendering
+  private reticleTorusMeshData!: Float32Array;
+  private reticleDotMeshData!: Float32Array;
+
   // Measurement State
   public points: Point3D[] = [];
   public reticlePosition: Point3D | null = null;
@@ -92,6 +96,20 @@ export class WebXREngine {
 
     this.initShaders();
     this.initTextTexture();
+    this.initReticleMeshes();
+  }
+
+  /**
+   * Performance Optimization (Bolt ⚡):
+   * Pre-computes static Float32Array mesh buffers for the placement reticle torus and targeting dot once during engine init.
+   * Reusing these pre-allocated arrays on every frame prevents thousands of trigonometric calculations and GC pressure in the WebXR animation loop.
+   */
+  private initReticleMeshes(): void {
+    const torusVerts = this.createTorusMesh(0.06, 0.0035, 28, 8);
+    this.reticleTorusMeshData = new Float32Array(torusVerts);
+
+    const dotVerts = this.createSphereMesh({ x: 0, y: 0, z: 0 }, 0.006, 8);
+    this.reticleDotMeshData = new Float32Array(dotVerts);
   }
 
   private initShaders(): void {
@@ -653,23 +671,18 @@ export class WebXREngine {
         gl.uniform4f(uColor, 0.22, 0.74, 0.97, 0.95);
       }
 
-      // Elegant clean circular reticle ring ($6\text{cm}$ radius)
-      const torusVerts = this.createTorusMesh(0.06, 0.0035, 28, 8);
+      // Elegant clean circular reticle ring (6cm radius)
+      // Reusing pre-computed Float32Array eliminates allocation overhead in 60-120Hz WebXR render loop
       gl.bufferData(
         gl.ARRAY_BUFFER,
-        new Float32Array(torusVerts),
+        this.reticleTorusMeshData,
         gl.DYNAMIC_DRAW,
       );
-      gl.drawArrays(gl.TRIANGLES, 0, torusVerts.length / 3);
+      gl.drawArrays(gl.TRIANGLES, 0, this.reticleTorusMeshData.length / 3);
 
-      // Clean center targeting dot ($6\text{mm}$)
-      const dotVerts = this.createSphereMesh({ x: 0, y: 0, z: 0 }, 0.006, 8);
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        new Float32Array(dotVerts),
-        gl.DYNAMIC_DRAW,
-      );
-      gl.drawArrays(gl.TRIANGLES, 0, dotVerts.length / 3);
+      // Clean center targeting dot (6mm)
+      gl.bufferData(gl.ARRAY_BUFFER, this.reticleDotMeshData, gl.DYNAMIC_DRAW);
+      gl.drawArrays(gl.TRIANGLES, 0, this.reticleDotMeshData.length / 3);
 
       gl.uniformMatrix4fv(uModel, false, identity);
     }

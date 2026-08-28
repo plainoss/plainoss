@@ -40,6 +40,12 @@ export class WebXREngine {
   private quadBuffer!: WebGLBuffer;
   private pointCloudBuffer!: WebGLBuffer;
 
+  // Pre-allocated typed array buffers to prevent GC allocations in 60/90fps WebXR render loop
+  private torusBuffer: Float32Array = new Float32Array(4032);
+  private sphereBuffer: Float32Array = new Float32Array(2592);
+  private cylinderBuffer: Float32Array = new Float32Array(144);
+  private roomGridBuffer: Float32Array = new Float32Array(16384);
+
   // Text Texture for 3D In-AR Measurement Label
   private textCanvas: HTMLCanvasElement;
   private textCtx: CanvasRenderingContext2D;
@@ -189,8 +195,12 @@ export class WebXREngine {
 
   /**
    * Generates a high-visibility room-scale planar grid of light dots across the entire detected physical floor.
+   * Writes directly into pre-allocated Float32Array buffer to avoid Garbage Collection frame drops.
    */
-  private generateRoomPlaneGrid(timeSec: number, camPos: Point3D): number[] {
+  private generateRoomPlaneGrid(
+    timeSec: number,
+    camPos: Point3D,
+  ): Float32Array {
     const groundY =
       this.reticlePosition !== null
         ? this.reticlePosition.y
@@ -198,16 +208,19 @@ export class WebXREngine {
           ? this.detectedGroundY
           : camPos.y - 0.65;
 
-    const dots: number[] = [];
+    let offset = 0;
     const spacing = 0.15; // 15cm grid pitch
     const maxRadius = 3.2; // 3.2m radius
 
     const snapX = Math.round(camPos.x / spacing) * spacing;
     const snapZ = Math.round(camPos.z / spacing) * spacing;
     const steps = Math.floor(maxRadius / spacing);
+    const maxFloats = this.roomGridBuffer.length;
 
     for (let ix = -steps; ix <= steps; ix++) {
       for (let iz = -steps; iz <= steps; iz++) {
+        if (offset + 4 > maxFloats) break;
+
         const wx = snapX + ix * spacing;
         const wz = snapZ + iz * spacing;
 
@@ -224,11 +237,14 @@ export class WebXREngine {
 
         if (alpha < 0.04) continue;
 
-        dots.push(wx, groundY, wz, alpha);
+        this.roomGridBuffer[offset++] = wx;
+        this.roomGridBuffer[offset++] = groundY;
+        this.roomGridBuffer[offset++] = wz;
+        this.roomGridBuffer[offset++] = alpha;
       }
     }
 
-    return dots;
+    return this.roomGridBuffer.subarray(0, offset);
   }
 
   private createProgram(vsSource: string, fsSource: string): WebGLProgram {
@@ -566,7 +582,7 @@ export class WebXREngine {
   private renderScene(
     projectionMatrix: Float32Array,
     viewMatrix: Float32Array,
-    roomGridDots: number[],
+    roomGridDots: Float32Array,
   ): void {
     const gl = this.gl;
     gl.enable(gl.DEPTH_TEST);
@@ -597,11 +613,7 @@ export class WebXREngine {
       gl.uniformMatrix4fv(uView, false, viewMatrix);
 
       gl.bindBuffer(gl.ARRAY_BUFFER, this.pointCloudBuffer);
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        new Float32Array(roomGridDots),
-        gl.DYNAMIC_DRAW,
-      );
+      gl.bufferData(gl.ARRAY_BUFFER, roomGridDots, gl.DYNAMIC_DRAW);
 
       const posAttr = gl.getAttribLocation(this.pointCloudProgram, "aPosition");
       const alphaAttr = gl.getAttribLocation(this.pointCloudProgram, "aAlpha");
@@ -655,20 +667,12 @@ export class WebXREngine {
 
       // Elegant clean circular reticle ring ($6\text{cm}$ radius)
       const torusVerts = this.createTorusMesh(0.06, 0.0035, 28, 8);
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        new Float32Array(torusVerts),
-        gl.DYNAMIC_DRAW,
-      );
+      gl.bufferData(gl.ARRAY_BUFFER, torusVerts, gl.DYNAMIC_DRAW);
       gl.drawArrays(gl.TRIANGLES, 0, torusVerts.length / 3);
 
       // Clean center targeting dot ($6\text{mm}$)
       const dotVerts = this.createSphereMesh({ x: 0, y: 0, z: 0 }, 0.006, 8);
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        new Float32Array(dotVerts),
-        gl.DYNAMIC_DRAW,
-      );
+      gl.bufferData(gl.ARRAY_BUFFER, dotVerts, gl.DYNAMIC_DRAW);
       gl.drawArrays(gl.TRIANGLES, 0, dotVerts.length / 3);
 
       gl.uniformMatrix4fv(uModel, false, identity);
@@ -692,11 +696,7 @@ export class WebXREngine {
         0.006,
       );
       if (tubeVerts.length > 0) {
-        gl.bufferData(
-          gl.ARRAY_BUFFER,
-          new Float32Array(tubeVerts),
-          gl.DYNAMIC_DRAW,
-        );
+        gl.bufferData(gl.ARRAY_BUFFER, tubeVerts, gl.DYNAMIC_DRAW);
         gl.drawArrays(gl.TRIANGLES, 0, tubeVerts.length / 3);
       }
 
@@ -719,11 +719,7 @@ export class WebXREngine {
         0.009,
       );
       if (tubeVerts.length > 0) {
-        gl.bufferData(
-          gl.ARRAY_BUFFER,
-          new Float32Array(tubeVerts),
-          gl.DYNAMIC_DRAW,
-        );
+        gl.bufferData(gl.ARRAY_BUFFER, tubeVerts, gl.DYNAMIC_DRAW);
         gl.drawArrays(gl.TRIANGLES, 0, tubeVerts.length / 3);
       }
 
@@ -747,29 +743,17 @@ export class WebXREngine {
       if (isDragged) {
         gl.uniform4f(uColor, 0.13, 0.77, 0.36, 1.0); // Bright Green when dragging
         const verts = this.createSphereMesh(p, 0.024, 12);
-        gl.bufferData(
-          gl.ARRAY_BUFFER,
-          new Float32Array(verts),
-          gl.DYNAMIC_DRAW,
-        );
+        gl.bufferData(gl.ARRAY_BUFFER, verts, gl.DYNAMIC_DRAW);
         gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
       } else if (isHovered) {
         gl.uniform4f(uColor, 0.98, 0.75, 0.18, 1.0); // Large Golden Pulsing Handle
         const verts = this.createSphereMesh(p, 0.022, 12);
-        gl.bufferData(
-          gl.ARRAY_BUFFER,
-          new Float32Array(verts),
-          gl.DYNAMIC_DRAW,
-        );
+        gl.bufferData(gl.ARRAY_BUFFER, verts, gl.DYNAMIC_DRAW);
         gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
       } else {
         gl.uniform4f(uColor, 0.98, 0.75, 0.18, 0.9); // Normal Gold Anchor Sphere
         const verts = this.createSphereMesh(p, 0.016, 10);
-        gl.bufferData(
-          gl.ARRAY_BUFFER,
-          new Float32Array(verts),
-          gl.DYNAMIC_DRAW,
-        );
+        gl.bufferData(gl.ARRAY_BUFFER, verts, gl.DYNAMIC_DRAW);
         gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
       }
     }
@@ -821,133 +805,259 @@ export class WebXREngine {
     }
   }
 
+  /**
+   * Generates volumetric 3D laser tube cylinder mesh into reusable Float32Array buffer.
+   */
   private createCylinderMesh(
     p1: Point3D,
     p2: Point3D,
     radius: number,
-  ): number[] {
-    const dir = { x: p2.x - p1.x, y: p2.y - p1.y, z: p2.z - p1.z };
-    const len = Math.hypot(dir.x, dir.y, dir.z);
-    if (len < 0.001) return [];
+  ): Float32Array {
+    const dirX = p2.x - p1.x;
+    const dirY = p2.y - p1.y;
+    const dirZ = p2.z - p1.z;
+    const len = Math.hypot(dirX, dirY, dirZ);
+    if (len < 0.001) return this.cylinderBuffer.subarray(0, 0);
 
-    const nd = { x: dir.x / len, y: dir.y / len, z: dir.z / len };
-    let up = { x: 0, y: 1, z: 0 };
-    if (Math.abs(nd.y) > 0.9) {
-      up = { x: 1, y: 0, z: 0 };
+    const ndx = dirX / len;
+    const ndy = dirY / len;
+    const ndz = dirZ / len;
+
+    let upX = 0,
+      upY = 1,
+      upZ = 0;
+    if (Math.abs(ndy) > 0.9) {
+      upX = 1;
+      upY = 0;
+      upZ = 0;
     }
 
-    const rx = up.y * nd.z - up.z * nd.y;
-    const ry = up.z * nd.x - up.x * nd.z;
-    const rz = up.x * nd.y - up.y * nd.x;
+    const rx = upY * ndz - upZ * ndy;
+    const ry = upZ * ndx - upX * ndz;
+    const rz = upX * ndy - upY * ndx;
     const rLen = Math.hypot(rx, ry, rz) || 1;
-    const nr = { x: rx / rLen, y: ry / rLen, z: rz / rLen };
+    const nrx = rx / rLen;
+    const nry = ry / rLen;
+    const nrz = rz / rLen;
 
-    const ux = nd.y * nr.z - nd.z * nr.y;
-    const uy = nd.z * nr.x - nd.x * nr.z;
-    const uz = nd.x * nr.y - nd.y * nr.x;
-    const nu = { x: ux, y: uy, z: uz };
+    const nux = ndy * nrz - ndz * nry;
+    const nuy = ndz * nrx - ndx * nrz;
+    const nuz = ndx * nry - ndy * nrx;
 
     const segments = 8;
-    const verts: number[] = [];
-    const ring1: Point3D[] = [];
-    const ring2: Point3D[] = [];
+    const ring1X = new Float32Array(segments + 1);
+    const ring1Y = new Float32Array(segments + 1);
+    const ring1Z = new Float32Array(segments + 1);
+    const ring2X = new Float32Array(segments + 1);
+    const ring2Y = new Float32Array(segments + 1);
+    const ring2Z = new Float32Array(segments + 1);
 
     for (let i = 0; i <= segments; i++) {
       const angle = (i / segments) * Math.PI * 2;
       const cos = Math.cos(angle) * radius;
       const sin = Math.sin(angle) * radius;
-      const ox = nr.x * cos + nu.x * sin;
-      const oy = nr.y * cos + nu.y * sin;
-      const oz = nr.z * cos + nu.z * sin;
-      ring1.push({ x: p1.x + ox, y: p1.y + oy, z: p1.z + oz });
-      ring2.push({ x: p2.x + ox, y: p2.y + oy, z: p2.z + oz });
+      const ox = nrx * cos + nux * sin;
+      const oy = nry * cos + nuy * sin;
+      const oz = nrz * cos + nuz * sin;
+      ring1X[i] = p1.x + ox;
+      ring1Y[i] = p1.y + oy;
+      ring1Z[i] = p1.z + oz;
+      ring2X[i] = p2.x + ox;
+      ring2Y[i] = p2.y + oy;
+      ring2Z[i] = p2.z + oz;
     }
 
+    let offset = 0;
     for (let i = 0; i < segments; i++) {
-      const a1 = ring1[i]!;
-      const a2 = ring1[i + 1]!;
-      const b1 = ring2[i]!;
-      const b2 = ring2[i + 1]!;
+      const a1x = ring1X[i]!,
+        a1y = ring1Y[i]!,
+        a1z = ring1Z[i]!;
+      const a2x = ring1X[i + 1]!,
+        a2y = ring1Y[i + 1]!,
+        a2z = ring1Z[i + 1]!;
+      const b1x = ring2X[i]!,
+        b1y = ring2Y[i]!,
+        b1z = ring2Z[i]!;
+      const b2x = ring2X[i + 1]!,
+        b2y = ring2Y[i + 1]!,
+        b2z = ring2Z[i + 1]!;
 
-      verts.push(a1.x, a1.y, a1.z, b1.x, b1.y, b1.z, a2.x, a2.y, a2.z);
-      verts.push(a2.x, a2.y, a2.z, b1.x, b1.y, b1.z, b2.x, b2.y, b2.z);
+      // Triangle 1
+      this.cylinderBuffer[offset++] = a1x;
+      this.cylinderBuffer[offset++] = a1y;
+      this.cylinderBuffer[offset++] = a1z;
+      this.cylinderBuffer[offset++] = b1x;
+      this.cylinderBuffer[offset++] = b1y;
+      this.cylinderBuffer[offset++] = b1z;
+      this.cylinderBuffer[offset++] = a2x;
+      this.cylinderBuffer[offset++] = a2y;
+      this.cylinderBuffer[offset++] = a2z;
+
+      // Triangle 2
+      this.cylinderBuffer[offset++] = a2x;
+      this.cylinderBuffer[offset++] = a2y;
+      this.cylinderBuffer[offset++] = a2z;
+      this.cylinderBuffer[offset++] = b1x;
+      this.cylinderBuffer[offset++] = b1y;
+      this.cylinderBuffer[offset++] = b1z;
+      this.cylinderBuffer[offset++] = b2x;
+      this.cylinderBuffer[offset++] = b2y;
+      this.cylinderBuffer[offset++] = b2z;
     }
 
-    return verts;
+    return this.cylinderBuffer.subarray(0, offset);
   }
 
+  /**
+   * Generates 3D handle sphere mesh into reusable Float32Array buffer.
+   */
   private createSphereMesh(
     center: Point3D,
     radius: number,
     segments: number = 8,
-  ): number[] {
-    const verts: number[] = [];
+  ): Float32Array {
+    let offset = 0;
+    const buf = this.sphereBuffer;
+
     for (let lat = 0; lat < segments; lat++) {
       const theta1 = (lat / segments) * Math.PI;
       const theta2 = ((lat + 1) / segments) * Math.PI;
+
+      const sinT1 = Math.sin(theta1),
+        cosT1 = Math.cos(theta1);
+      const sinT2 = Math.sin(theta2),
+        cosT2 = Math.cos(theta2);
 
       for (let lon = 0; lon < segments; lon++) {
         const phi1 = (lon / segments) * Math.PI * 2;
         const phi2 = ((lon + 1) / segments) * Math.PI * 2;
 
-        const p1 = this.spherePoint(center, radius, theta1, phi1);
-        const p2 = this.spherePoint(center, radius, theta1, phi2);
-        const p3 = this.spherePoint(center, radius, theta2, phi1);
-        const p4 = this.spherePoint(center, radius, theta2, phi2);
+        const cosP1 = Math.cos(phi1),
+          sinP1 = Math.sin(phi1);
+        const cosP2 = Math.cos(phi2),
+          sinP2 = Math.sin(phi2);
 
-        verts.push(p1.x, p1.y, p1.z, p3.x, p3.y, p3.z, p2.x, p2.y, p2.z);
-        verts.push(p2.x, p2.y, p2.z, p3.x, p3.y, p3.z, p4.x, p4.y, p4.z);
+        // p1
+        const p1x = center.x + radius * sinT1 * cosP1;
+        const p1y = center.y + radius * cosT1;
+        const p1z = center.z + radius * sinT1 * sinP1;
+
+        // p2
+        const p2x = center.x + radius * sinT1 * cosP2;
+        const p2y = center.y + radius * cosT1;
+        const p2z = center.z + radius * sinT1 * sinP2;
+
+        // p3
+        const p3x = center.x + radius * sinT2 * cosP1;
+        const p3y = center.y + radius * cosT2;
+        const p3z = center.z + radius * sinT2 * sinP1;
+
+        // p4
+        const p4x = center.x + radius * sinT2 * cosP2;
+        const p4y = center.y + radius * cosT2;
+        const p4z = center.z + radius * sinT2 * sinP2;
+
+        // Triangle 1 (p1, p3, p2)
+        buf[offset++] = p1x;
+        buf[offset++] = p1y;
+        buf[offset++] = p1z;
+        buf[offset++] = p3x;
+        buf[offset++] = p3y;
+        buf[offset++] = p3z;
+        buf[offset++] = p2x;
+        buf[offset++] = p2y;
+        buf[offset++] = p2z;
+
+        // Triangle 2 (p2, p3, p4)
+        buf[offset++] = p2x;
+        buf[offset++] = p2y;
+        buf[offset++] = p2z;
+        buf[offset++] = p3x;
+        buf[offset++] = p3y;
+        buf[offset++] = p3z;
+        buf[offset++] = p4x;
+        buf[offset++] = p4y;
+        buf[offset++] = p4z;
       }
     }
-    return verts;
+
+    return buf.subarray(0, offset);
   }
 
-  private spherePoint(
-    center: Point3D,
-    radius: number,
-    theta: number,
-    phi: number,
-  ): Point3D {
-    return {
-      x: center.x + radius * Math.sin(theta) * Math.cos(phi),
-      y: center.y + radius * Math.cos(theta),
-      z: center.z + radius * Math.sin(theta) * Math.sin(phi),
-    };
-  }
-
+  /**
+   * Generates placement reticle torus mesh into reusable Float32Array buffer.
+   */
   private createTorusMesh(
     radius: number,
     tubeRadius: number,
     radialSegments: number = 28,
     tubularSegments: number = 8,
-  ): number[] {
-    const verts: number[] = [];
+  ): Float32Array {
+    let offset = 0;
+    const buf = this.torusBuffer;
 
     for (let j = 0; j < radialSegments; j++) {
       const u1 = (j / radialSegments) * Math.PI * 2;
       const u2 = ((j + 1) / radialSegments) * Math.PI * 2;
 
+      const cosU1 = Math.cos(u1),
+        sinU1 = Math.sin(u1);
+      const cosU2 = Math.cos(u2),
+        sinU2 = Math.sin(u2);
+
       for (let i = 0; i < tubularSegments; i++) {
         const v1 = (i / tubularSegments) * Math.PI * 2;
         const v2 = ((i + 1) / tubularSegments) * Math.PI * 2;
 
-        const p1 = this.torusPoint(u1, v1, radius, tubeRadius);
-        const p2 = this.torusPoint(u2, v1, radius, tubeRadius);
-        const p3 = this.torusPoint(u1, v2, radius, tubeRadius);
-        const p4 = this.torusPoint(u2, v2, radius, tubeRadius);
+        const cosV1 = Math.cos(v1),
+          sinV1 = Math.sin(v1);
+        const cosV2 = Math.cos(v2),
+          sinV2 = Math.sin(v2);
 
-        verts.push(p1.x, p1.y, p1.z, p3.x, p3.y, p3.z, p2.x, p2.y, p2.z);
-        verts.push(p2.x, p2.y, p2.z, p3.x, p3.y, p3.z, p4.x, p4.y, p4.z);
+        // p1 (u1, v1)
+        const p1x = (radius + tubeRadius * cosV1) * cosU1;
+        const p1y = tubeRadius * sinV1;
+        const p1z = (radius + tubeRadius * cosV1) * sinU1;
+
+        // p2 (u2, v1)
+        const p2x = (radius + tubeRadius * cosV1) * cosU2;
+        const p2y = tubeRadius * sinV1;
+        const p2z = (radius + tubeRadius * cosV1) * sinU2;
+
+        // p3 (u1, v2)
+        const p3x = (radius + tubeRadius * cosV2) * cosU1;
+        const p3y = tubeRadius * sinV2;
+        const p3z = (radius + tubeRadius * cosV2) * sinU1;
+
+        // p4 (u2, v2)
+        const p4x = (radius + tubeRadius * cosV2) * cosU2;
+        const p4y = tubeRadius * sinV2;
+        const p4z = (radius + tubeRadius * cosV2) * sinU2;
+
+        // Triangle 1 (p1, p3, p2)
+        buf[offset++] = p1x;
+        buf[offset++] = p1y;
+        buf[offset++] = p1z;
+        buf[offset++] = p3x;
+        buf[offset++] = p3y;
+        buf[offset++] = p3z;
+        buf[offset++] = p2x;
+        buf[offset++] = p2y;
+        buf[offset++] = p2z;
+
+        // Triangle 2 (p2, p3, p4)
+        buf[offset++] = p2x;
+        buf[offset++] = p2y;
+        buf[offset++] = p2z;
+        buf[offset++] = p3x;
+        buf[offset++] = p3y;
+        buf[offset++] = p3z;
+        buf[offset++] = p4x;
+        buf[offset++] = p4y;
+        buf[offset++] = p4z;
       }
     }
 
-    return verts;
-  }
-
-  private torusPoint(u: number, v: number, r: number, tubeR: number): Point3D {
-    const x = (r + tubeR * Math.cos(v)) * Math.cos(u);
-    const y = tubeR * Math.sin(v);
-    const z = (r + tubeR * Math.cos(v)) * Math.sin(u);
-    return { x, y, z };
+    return buf.subarray(0, offset);
   }
 }

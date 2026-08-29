@@ -40,6 +40,19 @@ export class WebXREngine {
   private quadBuffer!: WebGLBuffer;
   private pointCloudBuffer!: WebGLBuffer;
 
+  // Pre-allocated Cached 3D Geometry Buffers (Zero GC allocations during AR render loop)
+  private reticleTorusVerts!: Float32Array;
+  private reticleDotVerts!: Float32Array;
+  private unitSphereVerts!: Float32Array;
+  private identityMatrix = new Float32Array([
+    1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1,
+  ]);
+  private modelMatrixScratch = new Float32Array(16);
+
+  // Dynamic Scratch Buffers to prevent per-frame heap allocations
+  private roomGridDotsScratch: Float32Array = new Float32Array(1024);
+  private cylinderScratch: Float32Array = new Float32Array(144);
+
   // Text Texture for 3D In-AR Measurement Label
   private textCanvas: HTMLCanvasElement;
   private textCtx: CanvasRenderingContext2D;
@@ -91,7 +104,29 @@ export class WebXREngine {
     this.textCtx = ctx;
 
     this.initShaders();
+    this.initPrecomputedGeometry();
     this.initTextTexture();
+  }
+
+  /**
+   * Pre-computes static 3D meshes into Float32Arrays once during engine initialization.
+   * Eliminates runtime heap allocations & garbage collection pauses in 60-90 FPS WebXR loop.
+   */
+  private initPrecomputedGeometry(): void {
+    // 1. Placement Reticle Ring Torus (r=0.06m, tubeR=0.0035m)
+    this.reticleTorusVerts = new Float32Array(
+      this.createTorusMesh(0.06, 0.0035, 28, 8),
+    );
+
+    // 2. Placement Reticle Center Dot (r=0.006m)
+    this.reticleDotVerts = new Float32Array(
+      this.createSphereMesh({ x: 0, y: 0, z: 0 }, 0.006, 8),
+    );
+
+    // 3. Unit Sphere Mesh (r=1.0m, used for 3D anchor handles via matrix scaling)
+    this.unitSphereVerts = new Float32Array(
+      this.createSphereMesh({ x: 0, y: 0, z: 0 }, 1.0, 10),
+    );
   }
 
   private initShaders(): void {
@@ -189,8 +224,9 @@ export class WebXREngine {
 
   /**
    * Generates a high-visibility room-scale planar grid of light dots across the entire detected physical floor.
+   * Writes directly into scratch Float32Array to avoid per-frame heap allocations.
    */
-  private generateRoomPlaneGrid(timeSec: number, camPos: Point3D): number[] {
+  private generateRoomPlaneGrid(timeSec: number, camPos: Point3D): number {
     const groundY =
       this.reticlePosition !== null
         ? this.reticlePosition.y
@@ -198,13 +234,20 @@ export class WebXREngine {
           ? this.detectedGroundY
           : camPos.y - 0.65;
 
-    const dots: number[] = [];
     const spacing = 0.15; // 15cm grid pitch
     const maxRadius = 3.2; // 3.2m radius
 
     const snapX = Math.round(camPos.x / spacing) * spacing;
     const snapZ = Math.round(camPos.z / spacing) * spacing;
     const steps = Math.floor(maxRadius / spacing);
+
+    const neededCapacity = (steps * 2 + 1) * (steps * 2 + 1) * 4;
+    if (this.roomGridDotsScratch.length < neededCapacity) {
+      this.roomGridDotsScratch = new Float32Array(neededCapacity);
+    }
+
+    const scratch = this.roomGridDotsScratch;
+    let offset = 0;
 
     for (let ix = -steps; ix <= steps; ix++) {
       for (let iz = -steps; iz <= steps; iz++) {
@@ -224,11 +267,42 @@ export class WebXREngine {
 
         if (alpha < 0.04) continue;
 
-        dots.push(wx, groundY, wz, alpha);
+        scratch[offset++] = wx;
+        scratch[offset++] = groundY;
+        scratch[offset++] = wz;
+        scratch[offset++] = alpha;
       }
     }
 
-    return dots;
+    return offset;
+  }
+
+  /**
+   * Constructs model matrix for position translation and uniform scale without array re-allocations.
+   */
+  private setModelMatrixTranslationScale(
+    x: number,
+    y: number,
+    z: number,
+    scale: number,
+  ): void {
+    const m = this.modelMatrixScratch;
+    m[0] = scale;
+    m[1] = 0;
+    m[2] = 0;
+    m[3] = 0;
+    m[4] = 0;
+    m[5] = scale;
+    m[6] = 0;
+    m[7] = 0;
+    m[8] = 0;
+    m[9] = 0;
+    m[10] = scale;
+    m[11] = 0;
+    m[12] = x;
+    m[13] = y;
+    m[14] = z;
+    m[15] = 1;
   }
 
   private createProgram(vsSource: string, fsSource: string): WebGLProgram {
@@ -524,7 +598,7 @@ export class WebXREngine {
         const camPos = pose.transform.position;
 
         // Generate high-visibility room-scale physical surface grid dots
-        const roomDots = this.generateRoomPlaneGrid(timeSec, camPos);
+        const roomGridCount = this.generateRoomPlaneGrid(timeSec, camPos);
 
         for (const view of pose.views) {
           const viewport = layer.getViewport(view);
@@ -533,7 +607,7 @@ export class WebXREngine {
           this.renderScene(
             view.projectionMatrix,
             view.transform.inverse.matrix,
-            roomDots,
+            roomGridCount,
           );
         }
       }
@@ -566,21 +640,17 @@ export class WebXREngine {
   private renderScene(
     projectionMatrix: Float32Array,
     viewMatrix: Float32Array,
-    roomGridDots: number[],
+    roomGridCount: number,
   ): void {
     const gl = this.gl;
     gl.enable(gl.DEPTH_TEST);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
-    const identity = new Float32Array([
-      1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1,
-    ]);
-
     // ==========================================
     // 1. RENDER SCANNING LIGHT-DOT SURFACE GRID (Active ONLY while scanning for surfaces)
     // ==========================================
-    if (roomGridDots.length > 0 && !this.reticleMatrix) {
+    if (roomGridCount > 0 && !this.reticleMatrix) {
       // Disable depth write so particles blend crisply on top of camera without depth clipping
       gl.depthMask(false);
       gl.useProgram(this.pointCloudProgram);
@@ -599,7 +669,7 @@ export class WebXREngine {
       gl.bindBuffer(gl.ARRAY_BUFFER, this.pointCloudBuffer);
       gl.bufferData(
         gl.ARRAY_BUFFER,
-        new Float32Array(roomGridDots),
+        this.roomGridDotsScratch.subarray(0, roomGridCount),
         gl.DYNAMIC_DRAW,
       );
 
@@ -612,7 +682,7 @@ export class WebXREngine {
       gl.enableVertexAttribArray(alphaAttr);
       gl.vertexAttribPointer(alphaAttr, 1, gl.FLOAT, false, 16, 12);
 
-      gl.drawArrays(gl.POINTS, 0, roomGridDots.length / 4);
+      gl.drawArrays(gl.POINTS, 0, roomGridCount / 4);
 
       gl.disableVertexAttribArray(alphaAttr);
       gl.depthMask(true);
@@ -633,7 +703,7 @@ export class WebXREngine {
 
     gl.uniformMatrix4fv(uProj, false, projectionMatrix);
     gl.uniformMatrix4fv(uView, false, viewMatrix);
-    gl.uniformMatrix4fv(uModel, false, identity);
+    gl.uniformMatrix4fv(uModel, false, this.identityMatrix);
 
     const posAttr = gl.getAttribLocation(this.geometryProgram, "aPosition");
     gl.enableVertexAttribArray(posAttr);
@@ -653,25 +723,15 @@ export class WebXREngine {
         gl.uniform4f(uColor, 0.22, 0.74, 0.97, 0.95);
       }
 
-      // Elegant clean circular reticle ring ($6\text{cm}$ radius)
-      const torusVerts = this.createTorusMesh(0.06, 0.0035, 28, 8);
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        new Float32Array(torusVerts),
-        gl.DYNAMIC_DRAW,
-      );
-      gl.drawArrays(gl.TRIANGLES, 0, torusVerts.length / 3);
+      // Elegant clean circular reticle ring (6cm radius) - using pre-computed static torus mesh
+      gl.bufferData(gl.ARRAY_BUFFER, this.reticleTorusVerts, gl.DYNAMIC_DRAW);
+      gl.drawArrays(gl.TRIANGLES, 0, this.reticleTorusVerts.length / 3);
 
-      // Clean center targeting dot ($6\text{mm}$)
-      const dotVerts = this.createSphereMesh({ x: 0, y: 0, z: 0 }, 0.006, 8);
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        new Float32Array(dotVerts),
-        gl.DYNAMIC_DRAW,
-      );
-      gl.drawArrays(gl.TRIANGLES, 0, dotVerts.length / 3);
+      // Clean center targeting dot (6mm radius) - using pre-computed static dot mesh
+      gl.bufferData(gl.ARRAY_BUFFER, this.reticleDotVerts, gl.DYNAMIC_DRAW);
+      gl.drawArrays(gl.TRIANGLES, 0, this.reticleDotVerts.length / 3);
 
-      gl.uniformMatrix4fv(uModel, false, identity);
+      gl.uniformMatrix4fv(uModel, false, this.identityMatrix);
     }
 
     let measurementMidpoint: Point3D | null = null;
@@ -686,18 +746,18 @@ export class WebXREngine {
     ) {
       gl.uniform4f(uColor, 0.22, 0.74, 0.97, 0.8); // Glowing Cyan Tube
 
-      const tubeVerts = this.createCylinderMesh(
+      const tubeVertCount = this.updateCylinderMesh(
         this.points[0],
         this.reticlePosition,
         0.006,
       );
-      if (tubeVerts.length > 0) {
+      if (tubeVertCount > 0) {
         gl.bufferData(
           gl.ARRAY_BUFFER,
-          new Float32Array(tubeVerts),
+          this.cylinderScratch.subarray(0, tubeVertCount),
           gl.DYNAMIC_DRAW,
         );
-        gl.drawArrays(gl.TRIANGLES, 0, tubeVerts.length / 3);
+        gl.drawArrays(gl.TRIANGLES, 0, tubeVertCount / 3);
       }
 
       currentDistanceValue = distance3D(this.points[0], this.reticlePosition);
@@ -713,18 +773,18 @@ export class WebXREngine {
     if (this.points.length >= 2 && this.points[0] && this.points[1]) {
       gl.uniform4f(uColor, 0.23, 0.51, 0.96, 1.0); // Bold Blue Tube
 
-      const tubeVerts = this.createCylinderMesh(
+      const tubeVertCount = this.updateCylinderMesh(
         this.points[0],
         this.points[1],
         0.009,
       );
-      if (tubeVerts.length > 0) {
+      if (tubeVertCount > 0) {
         gl.bufferData(
           gl.ARRAY_BUFFER,
-          new Float32Array(tubeVerts),
+          this.cylinderScratch.subarray(0, tubeVertCount),
           gl.DYNAMIC_DRAW,
         );
-        gl.drawArrays(gl.TRIANGLES, 0, tubeVerts.length / 3);
+        gl.drawArrays(gl.TRIANGLES, 0, tubeVertCount / 3);
       }
 
       currentDistanceValue = distance3D(this.points[0], this.points[1]);
@@ -736,42 +796,35 @@ export class WebXREngine {
       };
     }
 
-    // 2d. Render 3D Handles / Anchor Spheres
-    for (let i = 0; i < this.points.length; i++) {
-      const p = this.points[i];
-      if (!p) continue;
+    // 2d. Render 3D Handles / Anchor Spheres using pre-computed unit sphere & matrix scaling
+    if (this.points.length > 0) {
+      gl.bufferData(gl.ARRAY_BUFFER, this.unitSphereVerts, gl.DYNAMIC_DRAW);
 
-      const isDragged = this.draggedPointIndex === i;
-      const isHovered = this.hoveredHandleIndex === i;
+      for (let i = 0; i < this.points.length; i++) {
+        const p = this.points[i];
+        if (!p) continue;
 
-      if (isDragged) {
-        gl.uniform4f(uColor, 0.13, 0.77, 0.36, 1.0); // Bright Green when dragging
-        const verts = this.createSphereMesh(p, 0.024, 12);
-        gl.bufferData(
-          gl.ARRAY_BUFFER,
-          new Float32Array(verts),
-          gl.DYNAMIC_DRAW,
-        );
-        gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
-      } else if (isHovered) {
-        gl.uniform4f(uColor, 0.98, 0.75, 0.18, 1.0); // Large Golden Pulsing Handle
-        const verts = this.createSphereMesh(p, 0.022, 12);
-        gl.bufferData(
-          gl.ARRAY_BUFFER,
-          new Float32Array(verts),
-          gl.DYNAMIC_DRAW,
-        );
-        gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
-      } else {
-        gl.uniform4f(uColor, 0.98, 0.75, 0.18, 0.9); // Normal Gold Anchor Sphere
-        const verts = this.createSphereMesh(p, 0.016, 10);
-        gl.bufferData(
-          gl.ARRAY_BUFFER,
-          new Float32Array(verts),
-          gl.DYNAMIC_DRAW,
-        );
-        gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
+        const isDragged = this.draggedPointIndex === i;
+        const isHovered = this.hoveredHandleIndex === i;
+
+        let radius = 0.016;
+        if (isDragged) {
+          gl.uniform4f(uColor, 0.13, 0.77, 0.36, 1.0); // Bright Green when dragging
+          radius = 0.024;
+        } else if (isHovered) {
+          gl.uniform4f(uColor, 0.98, 0.75, 0.18, 1.0); // Large Golden Pulsing Handle
+          radius = 0.022;
+        } else {
+          gl.uniform4f(uColor, 0.98, 0.75, 0.18, 0.9); // Normal Gold Anchor Sphere
+          radius = 0.016;
+        }
+
+        this.setModelMatrixTranslationScale(p.x, p.y, p.z, radius);
+        gl.uniformMatrix4fv(uModel, false, this.modelMatrixScratch);
+        gl.drawArrays(gl.TRIANGLES, 0, this.unitSphereVerts.length / 3);
       }
+
+      gl.uniformMatrix4fv(uModel, false, this.identityMatrix);
     }
 
     // ==========================================
@@ -821,14 +874,13 @@ export class WebXREngine {
     }
   }
 
-  private createCylinderMesh(
-    p1: Point3D,
-    p2: Point3D,
-    radius: number,
-  ): number[] {
+  /**
+   * Generates cylinder mesh vertices into scratch Float32Array to avoid runtime garbage creation.
+   */
+  private updateCylinderMesh(p1: Point3D, p2: Point3D, radius: number): number {
     const dir = { x: p2.x - p1.x, y: p2.y - p1.y, z: p2.z - p1.z };
     const len = Math.hypot(dir.x, dir.y, dir.z);
-    if (len < 0.001) return [];
+    if (len < 0.001) return 0;
 
     const nd = { x: dir.x / len, y: dir.y / len, z: dir.z / len };
     let up = { x: 0, y: 1, z: 0 };
@@ -848,9 +900,12 @@ export class WebXREngine {
     const nu = { x: ux, y: uy, z: uz };
 
     const segments = 8;
-    const verts: number[] = [];
-    const ring1: Point3D[] = [];
-    const ring2: Point3D[] = [];
+    const ring1X: number[] = [];
+    const ring1Y: number[] = [];
+    const ring1Z: number[] = [];
+    const ring2X: number[] = [];
+    const ring2Y: number[] = [];
+    const ring2Z: number[] = [];
 
     for (let i = 0; i <= segments; i++) {
       const angle = (i / segments) * Math.PI * 2;
@@ -859,21 +914,53 @@ export class WebXREngine {
       const ox = nr.x * cos + nu.x * sin;
       const oy = nr.y * cos + nu.y * sin;
       const oz = nr.z * cos + nu.z * sin;
-      ring1.push({ x: p1.x + ox, y: p1.y + oy, z: p1.z + oz });
-      ring2.push({ x: p2.x + ox, y: p2.y + oy, z: p2.z + oz });
+      ring1X.push(p1.x + ox);
+      ring1Y.push(p1.y + oy);
+      ring1Z.push(p1.z + oz);
+      ring2X.push(p2.x + ox);
+      ring2Y.push(p2.y + oy);
+      ring2Z.push(p2.z + oz);
     }
+
+    const verts = this.cylinderScratch;
+    let offset = 0;
 
     for (let i = 0; i < segments; i++) {
-      const a1 = ring1[i]!;
-      const a2 = ring1[i + 1]!;
-      const b1 = ring2[i]!;
-      const b2 = ring2[i + 1]!;
+      const a1x = ring1X[i]!,
+        a1y = ring1Y[i]!,
+        a1z = ring1Z[i]!;
+      const a2x = ring1X[i + 1]!,
+        a2y = ring1Y[i + 1]!,
+        a2z = ring1Z[i + 1]!;
+      const b1x = ring2X[i]!,
+        b1y = ring2Y[i]!,
+        b1z = ring2Z[i]!;
+      const b2x = ring2X[i + 1]!,
+        b2y = ring2Y[i + 1]!,
+        b2z = ring2Z[i + 1]!;
 
-      verts.push(a1.x, a1.y, a1.z, b1.x, b1.y, b1.z, a2.x, a2.y, a2.z);
-      verts.push(a2.x, a2.y, a2.z, b1.x, b1.y, b1.z, b2.x, b2.y, b2.z);
+      verts[offset++] = a1x;
+      verts[offset++] = a1y;
+      verts[offset++] = a1z;
+      verts[offset++] = b1x;
+      verts[offset++] = b1y;
+      verts[offset++] = b1z;
+      verts[offset++] = a2x;
+      verts[offset++] = a2y;
+      verts[offset++] = a2z;
+
+      verts[offset++] = a2x;
+      verts[offset++] = a2y;
+      verts[offset++] = a2z;
+      verts[offset++] = b1x;
+      verts[offset++] = b1y;
+      verts[offset++] = b1z;
+      verts[offset++] = b2x;
+      verts[offset++] = b2y;
+      verts[offset++] = b2z;
     }
 
-    return verts;
+    return offset;
   }
 
   private createSphereMesh(

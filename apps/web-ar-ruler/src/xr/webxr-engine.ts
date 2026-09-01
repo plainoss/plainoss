@@ -40,6 +40,12 @@ export class WebXREngine {
   private quadBuffer!: WebGLBuffer;
   private pointCloudBuffer!: WebGLBuffer;
 
+  // Pre-computed static 3D VBOs for reticle (avoids per-frame JS allocations & GPU uploads at 60-120 FPS)
+  private reticleTorusBuffer!: WebGLBuffer;
+  private reticleTorusVertexCount: number = 0;
+  private reticleDotBuffer!: WebGLBuffer;
+  private reticleDotVertexCount: number = 0;
+
   // Text Texture for 3D In-AR Measurement Label
   private textCanvas: HTMLCanvasElement;
   private textCtx: CanvasRenderingContext2D;
@@ -92,6 +98,32 @@ export class WebXREngine {
 
     this.initShaders();
     this.initTextTexture();
+    this.initReticleBuffers();
+  }
+
+  /**
+   * Pre-computes and uploads static geometry VBOs for placement reticle ring and dot.
+   * This eliminates JS heap garbage collection churn and WebGL buffer upload overhead
+   * on every WebXR frame (running at 60Hz to 120Hz).
+   */
+  private initReticleBuffers(): void {
+    const gl = this.gl;
+
+    const torusVerts = new Float32Array(
+      this.createTorusMesh(0.06, 0.0035, 28, 8),
+    );
+    this.reticleTorusBuffer = gl.createBuffer()!;
+    this.reticleTorusVertexCount = torusVerts.length / 3;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.reticleTorusBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, torusVerts, gl.STATIC_DRAW);
+
+    const dotVerts = new Float32Array(
+      this.createSphereMesh({ x: 0, y: 0, z: 0 }, 0.006, 8),
+    );
+    this.reticleDotBuffer = gl.createBuffer()!;
+    this.reticleDotVertexCount = dotVerts.length / 3;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.reticleDotBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, dotVerts, gl.STATIC_DRAW);
   }
 
   private initShaders(): void {
@@ -653,23 +685,20 @@ export class WebXREngine {
         gl.uniform4f(uColor, 0.22, 0.74, 0.97, 0.95);
       }
 
-      // Elegant clean circular reticle ring ($6\text{cm}$ radius)
-      const torusVerts = this.createTorusMesh(0.06, 0.0035, 28, 8);
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        new Float32Array(torusVerts),
-        gl.DYNAMIC_DRAW,
-      );
-      gl.drawArrays(gl.TRIANGLES, 0, torusVerts.length / 3);
+      // Performance Optimization: Use pre-computed VBOs for reticle ring and center dot
+      // instead of re-generating JS mesh arrays and re-uploading buffer data every frame.
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.reticleTorusBuffer);
+      gl.vertexAttribPointer(posAttr, 3, gl.FLOAT, false, 0, 0);
+      gl.drawArrays(gl.TRIANGLES, 0, this.reticleTorusVertexCount);
 
-      // Clean center targeting dot ($6\text{mm}$)
-      const dotVerts = this.createSphereMesh({ x: 0, y: 0, z: 0 }, 0.006, 8);
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        new Float32Array(dotVerts),
-        gl.DYNAMIC_DRAW,
-      );
-      gl.drawArrays(gl.TRIANGLES, 0, dotVerts.length / 3);
+      // Clean center targeting dot
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.reticleDotBuffer);
+      gl.vertexAttribPointer(posAttr, 3, gl.FLOAT, false, 0, 0);
+      gl.drawArrays(gl.TRIANGLES, 0, this.reticleDotVertexCount);
+
+      // Reset buffer binding back to default vertex buffer for subsequent dynamic geometries
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexBuffer);
+      gl.vertexAttribPointer(posAttr, 3, gl.FLOAT, false, 0, 0);
 
       gl.uniformMatrix4fv(uModel, false, identity);
     }

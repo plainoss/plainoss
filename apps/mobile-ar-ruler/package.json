@@ -12,10 +12,10 @@
   },
   "dependencies": {
     "@plainoss/core": "workspace:*",
-    "expo": "~57.0.13",
+    "expo": "~57.0.18",
     "expo-status-bar": "~57.0.1",
     "react": "19.2.8",
-    "react-native": "0.87.0"
+    "react-native": "0.87.1"
   },
   "devDependencies": {
     "@plainoss/tsconfig": "workspace:*",

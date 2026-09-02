@@ -251,11 +251,11 @@ export function App() {
 
       {/* 2. Fullscreen 1-Tap Trigger (Tap anywhere to start AR) */}
       {isARSupported && !isARActive && (
-        <div
+        <button
+          type="button"
           className="fullscreen-tap-launcher"
           onClick={handleStartAR}
-          role="button"
-          tabIndex={0}
+          aria-label="Start AR Ruler"
         >
           <div className="tap-launcher-content">
             <div className="pulsing-ar-badge">
@@ -264,7 +264,7 @@ export function App() {
             <h2>AR Ruler</h2>
             <p>Tap anywhere on screen to begin</p>
           </div>
-        </div>
+        </button>
       )}
 
       {/* 3. WebXR Unsupported Screen */}

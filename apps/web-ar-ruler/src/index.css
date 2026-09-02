@@ -101,6 +101,17 @@ body {
   cursor: pointer;
   padding: 1.5rem;
   touch-action: manipulation;
+  border: none;
+  font-family: inherit;
+  color: inherit;
+  width: 100%;
+}
+
+.fullscreen-tap-launcher:focus-visible,
+.btn-ar-circle-icon:focus-visible,
+.ar-unit-select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .tap-launcher-content {

@@ -40,6 +40,15 @@ export class WebXREngine {
   private quadBuffer!: WebGLBuffer;
   private pointCloudBuffer!: WebGLBuffer;
 
+  // Pre-allocated static WebGL buffers and vertex counts (Bolt Performance Optimization)
+  private torusBuffer!: WebGLBuffer;
+  private torusVertexCount: number = 0;
+  private dotSphereBuffer!: WebGLBuffer;
+  private dotSphereVertexCount: number = 0;
+  private unitSphereBuffer!: WebGLBuffer;
+  private unitSphereVertexCount: number = 0;
+  private handleMatrixBuffer: Float32Array = new Float32Array(16);
+
   // Text Texture for 3D In-AR Measurement Label
   private textCanvas: HTMLCanvasElement;
   private textCtx: CanvasRenderingContext2D;
@@ -185,6 +194,34 @@ export class WebXREngine {
 
     this.pointCloudProgram = this.createProgram(vsPointCloud, fsPointCloud);
     this.pointCloudBuffer = gl.createBuffer()!;
+
+    // 4. Bolt Optimization: Pre-compute static 3D meshes ONCE to eliminate per-frame allocations & trig math
+    // 4a. Reticle Torus Mesh
+    const torusVerts = new Float32Array(
+      this.createTorusMesh(0.06, 0.0035, 28, 8),
+    );
+    this.torusVertexCount = torusVerts.length / 3;
+    this.torusBuffer = gl.createBuffer()!;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.torusBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, torusVerts, gl.STATIC_DRAW);
+
+    // 4b. Reticle Center Dot Mesh
+    const dotVerts = new Float32Array(
+      this.createSphereMesh({ x: 0, y: 0, z: 0 }, 0.006, 8),
+    );
+    this.dotSphereVertexCount = dotVerts.length / 3;
+    this.dotSphereBuffer = gl.createBuffer()!;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.dotSphereBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, dotVerts, gl.STATIC_DRAW);
+
+    // 4c. Unit Sphere Mesh (for handle anchors, positioned & scaled via uModelMatrix)
+    const unitSphereVerts = new Float32Array(
+      this.createSphereMesh({ x: 0, y: 0, z: 0 }, 1.0, 12),
+    );
+    this.unitSphereVertexCount = unitSphereVerts.length / 3;
+    this.unitSphereBuffer = gl.createBuffer()!;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.unitSphereBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, unitSphereVerts, gl.STATIC_DRAW);
   }
 
   /**
@@ -653,23 +690,15 @@ export class WebXREngine {
         gl.uniform4f(uColor, 0.22, 0.74, 0.97, 0.95);
       }
 
-      // Elegant clean circular reticle ring ($6\text{cm}$ radius)
-      const torusVerts = this.createTorusMesh(0.06, 0.0035, 28, 8);
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        new Float32Array(torusVerts),
-        gl.DYNAMIC_DRAW,
-      );
-      gl.drawArrays(gl.TRIANGLES, 0, torusVerts.length / 3);
+      // Bolt Optimization: Render pre-allocated static reticle ring buffer (0 per-frame allocations)
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.torusBuffer);
+      gl.vertexAttribPointer(posAttr, 3, gl.FLOAT, false, 0, 0);
+      gl.drawArrays(gl.TRIANGLES, 0, this.torusVertexCount);
 
-      // Clean center targeting dot ($6\text{mm}$)
-      const dotVerts = this.createSphereMesh({ x: 0, y: 0, z: 0 }, 0.006, 8);
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        new Float32Array(dotVerts),
-        gl.DYNAMIC_DRAW,
-      );
-      gl.drawArrays(gl.TRIANGLES, 0, dotVerts.length / 3);
+      // Bolt Optimization: Render pre-allocated static center dot buffer (0 per-frame allocations)
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.dotSphereBuffer);
+      gl.vertexAttribPointer(posAttr, 3, gl.FLOAT, false, 0, 0);
+      gl.drawArrays(gl.TRIANGLES, 0, this.dotSphereVertexCount);
 
       gl.uniformMatrix4fv(uModel, false, identity);
     }
@@ -736,42 +765,55 @@ export class WebXREngine {
       };
     }
 
-    // 2d. Render 3D Handles / Anchor Spheres
-    for (let i = 0; i < this.points.length; i++) {
-      const p = this.points[i];
-      if (!p) continue;
+    // 2d. Render 3D Handles / Anchor Spheres using matrix transforms & static unit sphere buffer (0 per-frame allocations)
+    if (this.points.length > 0) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.unitSphereBuffer);
+      gl.vertexAttribPointer(posAttr, 3, gl.FLOAT, false, 0, 0);
 
-      const isDragged = this.draggedPointIndex === i;
-      const isHovered = this.hoveredHandleIndex === i;
+      for (let i = 0; i < this.points.length; i++) {
+        const p = this.points[i];
+        if (!p) continue;
 
-      if (isDragged) {
-        gl.uniform4f(uColor, 0.13, 0.77, 0.36, 1.0); // Bright Green when dragging
-        const verts = this.createSphereMesh(p, 0.024, 12);
-        gl.bufferData(
-          gl.ARRAY_BUFFER,
-          new Float32Array(verts),
-          gl.DYNAMIC_DRAW,
-        );
-        gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
-      } else if (isHovered) {
-        gl.uniform4f(uColor, 0.98, 0.75, 0.18, 1.0); // Large Golden Pulsing Handle
-        const verts = this.createSphereMesh(p, 0.022, 12);
-        gl.bufferData(
-          gl.ARRAY_BUFFER,
-          new Float32Array(verts),
-          gl.DYNAMIC_DRAW,
-        );
-        gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
-      } else {
-        gl.uniform4f(uColor, 0.98, 0.75, 0.18, 0.9); // Normal Gold Anchor Sphere
-        const verts = this.createSphereMesh(p, 0.016, 10);
-        gl.bufferData(
-          gl.ARRAY_BUFFER,
-          new Float32Array(verts),
-          gl.DYNAMIC_DRAW,
-        );
-        gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
+        const isDragged = this.draggedPointIndex === i;
+        const isHovered = this.hoveredHandleIndex === i;
+
+        let radius = 0.016;
+        if (isDragged) {
+          gl.uniform4f(uColor, 0.13, 0.77, 0.36, 1.0); // Bright Green when dragging
+          radius = 0.024;
+        } else if (isHovered) {
+          gl.uniform4f(uColor, 0.98, 0.75, 0.18, 1.0); // Large Golden Pulsing Handle
+          radius = 0.022;
+        } else {
+          gl.uniform4f(uColor, 0.98, 0.75, 0.18, 0.9); // Normal Gold Anchor Sphere
+          radius = 0.016;
+        }
+
+        // Matrix transform: Translation(p.x, p.y, p.z) * Scale(radius)
+        // Uses pre-allocated Float32Array buffer to eliminate per-frame garbage collection
+        const m = this.handleMatrixBuffer;
+        m[0] = radius;
+        m[1] = 0;
+        m[2] = 0;
+        m[3] = 0;
+        m[4] = 0;
+        m[5] = radius;
+        m[6] = 0;
+        m[7] = 0;
+        m[8] = 0;
+        m[9] = 0;
+        m[10] = radius;
+        m[11] = 0;
+        m[12] = p.x;
+        m[13] = p.y;
+        m[14] = p.z;
+        m[15] = 1.0;
+
+        gl.uniformMatrix4fv(uModel, false, m);
+        gl.drawArrays(gl.TRIANGLES, 0, this.unitSphereVertexCount);
       }
+
+      gl.uniformMatrix4fv(uModel, false, identity);
     }
 
     // ==========================================

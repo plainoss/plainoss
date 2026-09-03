@@ -21,6 +21,17 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
   onCopyRecord,
   onCopyAll,
 }) => {
+  React.useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   return (
@@ -92,6 +103,7 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
                   <button
                     className="btn btn-secondary btn-xs"
                     onClick={() => onCopyRecord(r)}
+                    aria-label={`Copy ${r.formatted} measurement`}
                   >
                     <Copy size={12} />
                     <span>Copy</span>
@@ -99,6 +111,7 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
                   <button
                     className="btn btn-danger btn-xs"
                     onClick={() => onDeleteRecord(r.id)}
+                    aria-label={`Delete ${r.formatted} measurement`}
                   >
                     <Trash2 size={12} />
                     <span>Delete</span>

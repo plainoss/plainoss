@@ -60,6 +60,10 @@ export class WebXREngine {
   public hoveredHandleIndex: number | null = null;
   public suppressTapUntil: number = 0;
 
+  // Cached Reticle Geometry Buffers (avoids per-frame trig calculations & array allocations at 60/90 FPS)
+  private cachedReticleTorusVerts: Float32Array | null = null;
+  private cachedReticleDotVerts: Float32Array | null = null;
+
   constructor(canvas: HTMLCanvasElement, callbacks: XREngineCallbacks) {
     this.callbacks = callbacks;
 
@@ -653,23 +657,31 @@ export class WebXREngine {
         gl.uniform4f(uColor, 0.22, 0.74, 0.97, 0.95);
       }
 
-      // Elegant clean circular reticle ring ($6\text{cm}$ radius)
-      const torusVerts = this.createTorusMesh(0.06, 0.0035, 28, 8);
+      // Elegant clean circular reticle ring (6cm radius)
+      if (!this.cachedReticleTorusVerts) {
+        this.cachedReticleTorusVerts = new Float32Array(
+          this.createTorusMesh(0.06, 0.0035, 28, 8),
+        );
+      }
       gl.bufferData(
         gl.ARRAY_BUFFER,
-        new Float32Array(torusVerts),
-        gl.DYNAMIC_DRAW,
+        this.cachedReticleTorusVerts,
+        gl.STATIC_DRAW,
       );
-      gl.drawArrays(gl.TRIANGLES, 0, torusVerts.length / 3);
+      gl.drawArrays(gl.TRIANGLES, 0, this.cachedReticleTorusVerts.length / 3);
 
-      // Clean center targeting dot ($6\text{mm}$)
-      const dotVerts = this.createSphereMesh({ x: 0, y: 0, z: 0 }, 0.006, 8);
+      // Clean center targeting dot (6mm)
+      if (!this.cachedReticleDotVerts) {
+        this.cachedReticleDotVerts = new Float32Array(
+          this.createSphereMesh({ x: 0, y: 0, z: 0 }, 0.006, 8),
+        );
+      }
       gl.bufferData(
         gl.ARRAY_BUFFER,
-        new Float32Array(dotVerts),
-        gl.DYNAMIC_DRAW,
+        this.cachedReticleDotVerts,
+        gl.STATIC_DRAW,
       );
-      gl.drawArrays(gl.TRIANGLES, 0, dotVerts.length / 3);
+      gl.drawArrays(gl.TRIANGLES, 0, this.cachedReticleDotVerts.length / 3);
 
       gl.uniformMatrix4fv(uModel, false, identity);
     }

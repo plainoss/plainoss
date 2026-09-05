@@ -39,6 +39,8 @@ export class WebXREngine {
   private vertexBuffer!: WebGLBuffer;
   private quadBuffer!: WebGLBuffer;
   private pointCloudBuffer!: WebGLBuffer;
+  private unitSphereBuffer!: WebGLBuffer;
+  private unitSphereVertCount: number = 0;
 
   // Text Texture for 3D In-AR Measurement Label
   private textCanvas: HTMLCanvasElement;
@@ -185,6 +187,21 @@ export class WebXREngine {
 
     this.pointCloudProgram = this.createProgram(vsPointCloud, fsPointCloud);
     this.pointCloudBuffer = gl.createBuffer()!;
+
+    // Pre-generate and cache unit sphere geometry (radius = 1) for 3D handle rendering
+    const unitSphereVerts = this.createSphereMesh(
+      { x: 0, y: 0, z: 0 },
+      1.0,
+      12,
+    );
+    this.unitSphereVertCount = unitSphereVerts.length / 3;
+    this.unitSphereBuffer = gl.createBuffer()!;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.unitSphereBuffer);
+    gl.bufferData(
+      gl.ARRAY_BUFFER,
+      new Float32Array(unitSphereVerts),
+      gl.STATIC_DRAW,
+    );
   }
 
   /**
@@ -736,42 +753,55 @@ export class WebXREngine {
       };
     }
 
-    // 2d. Render 3D Handles / Anchor Spheres
-    for (let i = 0; i < this.points.length; i++) {
-      const p = this.points[i];
-      if (!p) continue;
+    // 2d. Render 3D Handles / Anchor Spheres (using cached unit sphere and model matrix transformation)
+    if (this.points.length > 0) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.unitSphereBuffer);
+      gl.vertexAttribPointer(posAttr, 3, gl.FLOAT, false, 0, 0);
 
-      const isDragged = this.draggedPointIndex === i;
-      const isHovered = this.hoveredHandleIndex === i;
+      const handleMat = new Float32Array(16);
 
-      if (isDragged) {
-        gl.uniform4f(uColor, 0.13, 0.77, 0.36, 1.0); // Bright Green when dragging
-        const verts = this.createSphereMesh(p, 0.024, 12);
-        gl.bufferData(
-          gl.ARRAY_BUFFER,
-          new Float32Array(verts),
-          gl.DYNAMIC_DRAW,
-        );
-        gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
-      } else if (isHovered) {
-        gl.uniform4f(uColor, 0.98, 0.75, 0.18, 1.0); // Large Golden Pulsing Handle
-        const verts = this.createSphereMesh(p, 0.022, 12);
-        gl.bufferData(
-          gl.ARRAY_BUFFER,
-          new Float32Array(verts),
-          gl.DYNAMIC_DRAW,
-        );
-        gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
-      } else {
-        gl.uniform4f(uColor, 0.98, 0.75, 0.18, 0.9); // Normal Gold Anchor Sphere
-        const verts = this.createSphereMesh(p, 0.016, 10);
-        gl.bufferData(
-          gl.ARRAY_BUFFER,
-          new Float32Array(verts),
-          gl.DYNAMIC_DRAW,
-        );
-        gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
+      for (let i = 0; i < this.points.length; i++) {
+        const p = this.points[i];
+        if (!p) continue;
+
+        const isDragged = this.draggedPointIndex === i;
+        const isHovered = this.hoveredHandleIndex === i;
+        const radius = isDragged ? 0.024 : isHovered ? 0.022 : 0.016;
+
+        handleMat[0] = radius;
+        handleMat[1] = 0;
+        handleMat[2] = 0;
+        handleMat[3] = 0;
+
+        handleMat[4] = 0;
+        handleMat[5] = radius;
+        handleMat[6] = 0;
+        handleMat[7] = 0;
+
+        handleMat[8] = 0;
+        handleMat[9] = 0;
+        handleMat[10] = radius;
+        handleMat[11] = 0;
+
+        handleMat[12] = p.x;
+        handleMat[13] = p.y;
+        handleMat[14] = p.z;
+        handleMat[15] = 1;
+
+        gl.uniformMatrix4fv(uModel, false, handleMat);
+
+        if (isDragged) {
+          gl.uniform4f(uColor, 0.13, 0.77, 0.36, 1.0); // Bright Green when dragging
+        } else if (isHovered) {
+          gl.uniform4f(uColor, 0.98, 0.75, 0.18, 1.0); // Large Golden Pulsing Handle
+        } else {
+          gl.uniform4f(uColor, 0.98, 0.75, 0.18, 0.9); // Normal Gold Anchor Sphere
+        }
+
+        gl.drawArrays(gl.TRIANGLES, 0, this.unitSphereVertCount);
       }
+
+      gl.uniformMatrix4fv(uModel, false, identity);
     }
 
     // ==========================================

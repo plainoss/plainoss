@@ -215,6 +215,38 @@ export function App() {
     }
   }, [isARSupported, points, unit]);
 
+  // Keyboard Shortcuts while in AR Mode
+  useEffect(() => {
+    if (!isARActive) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if user is typing in an input or select element
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement
+      ) {
+        return;
+      }
+
+      if (e.key === "Escape") {
+        e.preventDefault();
+        xrEngineRef.current?.endAR();
+      } else if (
+        e.key === "c" ||
+        e.key === "C" ||
+        e.key === "r" ||
+        e.key === "R" ||
+        e.key === "Delete"
+      ) {
+        e.preventDefault();
+        handleReset();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isARActive, handleReset]);
+
   // Dynamic Instruction Icon & Text
   let statusIcon = <Crosshair size={16} aria-hidden="true" />;
   let statusMessage = "Surface detected — Tap to set Point 1";
@@ -254,8 +286,15 @@ export function App() {
         <div
           className="fullscreen-tap-launcher"
           onClick={handleStartAR}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              handleStartAR();
+            }
+          }}
           role="button"
           tabIndex={0}
+          aria-label="Start AR Ruler Mode"
         >
           <div className="tap-launcher-content">
             <div className="pulsing-ar-badge">

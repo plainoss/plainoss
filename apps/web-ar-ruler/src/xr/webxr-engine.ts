@@ -654,21 +654,14 @@ export class WebXREngine {
       }
 
       // Elegant clean circular reticle ring ($6\text{cm}$ radius)
+      // Optimized: createTorusMesh returns Float32Array directly without per-frame object allocations
       const torusVerts = this.createTorusMesh(0.06, 0.0035, 28, 8);
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        new Float32Array(torusVerts),
-        gl.DYNAMIC_DRAW,
-      );
+      gl.bufferData(gl.ARRAY_BUFFER, torusVerts, gl.DYNAMIC_DRAW);
       gl.drawArrays(gl.TRIANGLES, 0, torusVerts.length / 3);
 
       // Clean center targeting dot ($6\text{mm}$)
       const dotVerts = this.createSphereMesh({ x: 0, y: 0, z: 0 }, 0.006, 8);
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        new Float32Array(dotVerts),
-        gl.DYNAMIC_DRAW,
-      );
+      gl.bufferData(gl.ARRAY_BUFFER, dotVerts, gl.DYNAMIC_DRAW);
       gl.drawArrays(gl.TRIANGLES, 0, dotVerts.length / 3);
 
       gl.uniformMatrix4fv(uModel, false, identity);
@@ -692,11 +685,7 @@ export class WebXREngine {
         0.006,
       );
       if (tubeVerts.length > 0) {
-        gl.bufferData(
-          gl.ARRAY_BUFFER,
-          new Float32Array(tubeVerts),
-          gl.DYNAMIC_DRAW,
-        );
+        gl.bufferData(gl.ARRAY_BUFFER, tubeVerts, gl.DYNAMIC_DRAW);
         gl.drawArrays(gl.TRIANGLES, 0, tubeVerts.length / 3);
       }
 
@@ -719,11 +708,7 @@ export class WebXREngine {
         0.009,
       );
       if (tubeVerts.length > 0) {
-        gl.bufferData(
-          gl.ARRAY_BUFFER,
-          new Float32Array(tubeVerts),
-          gl.DYNAMIC_DRAW,
-        );
+        gl.bufferData(gl.ARRAY_BUFFER, tubeVerts, gl.DYNAMIC_DRAW);
         gl.drawArrays(gl.TRIANGLES, 0, tubeVerts.length / 3);
       }
 
@@ -747,29 +732,17 @@ export class WebXREngine {
       if (isDragged) {
         gl.uniform4f(uColor, 0.13, 0.77, 0.36, 1.0); // Bright Green when dragging
         const verts = this.createSphereMesh(p, 0.024, 12);
-        gl.bufferData(
-          gl.ARRAY_BUFFER,
-          new Float32Array(verts),
-          gl.DYNAMIC_DRAW,
-        );
+        gl.bufferData(gl.ARRAY_BUFFER, verts, gl.DYNAMIC_DRAW);
         gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
       } else if (isHovered) {
         gl.uniform4f(uColor, 0.98, 0.75, 0.18, 1.0); // Large Golden Pulsing Handle
         const verts = this.createSphereMesh(p, 0.022, 12);
-        gl.bufferData(
-          gl.ARRAY_BUFFER,
-          new Float32Array(verts),
-          gl.DYNAMIC_DRAW,
-        );
+        gl.bufferData(gl.ARRAY_BUFFER, verts, gl.DYNAMIC_DRAW);
         gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
       } else {
         gl.uniform4f(uColor, 0.98, 0.75, 0.18, 0.9); // Normal Gold Anchor Sphere
         const verts = this.createSphereMesh(p, 0.016, 10);
-        gl.bufferData(
-          gl.ARRAY_BUFFER,
-          new Float32Array(verts),
-          gl.DYNAMIC_DRAW,
-        );
+        gl.bufferData(gl.ARRAY_BUFFER, verts, gl.DYNAMIC_DRAW);
         gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
       }
     }
@@ -821,133 +794,282 @@ export class WebXREngine {
     }
   }
 
+  /**
+   * Generates cylinder 3D mesh vertices directly into a Float32Array.
+   * Eliminates intermediate Point3D objects and array allocations per frame.
+   */
   private createCylinderMesh(
     p1: Point3D,
     p2: Point3D,
     radius: number,
-  ): number[] {
-    const dir = { x: p2.x - p1.x, y: p2.y - p1.y, z: p2.z - p1.z };
-    const len = Math.hypot(dir.x, dir.y, dir.z);
-    if (len < 0.001) return [];
+  ): Float32Array {
+    const dirX = p2.x - p1.x;
+    const dirY = p2.y - p1.y;
+    const dirZ = p2.z - p1.z;
+    const len = Math.hypot(dirX, dirY, dirZ);
+    if (len < 0.001) return new Float32Array(0);
 
-    const nd = { x: dir.x / len, y: dir.y / len, z: dir.z / len };
-    let up = { x: 0, y: 1, z: 0 };
-    if (Math.abs(nd.y) > 0.9) {
-      up = { x: 1, y: 0, z: 0 };
+    const ndX = dirX / len;
+    const ndY = dirY / len;
+    const ndZ = dirZ / len;
+
+    let upX = 0;
+    let upY = 1;
+    let upZ = 0;
+    if (Math.abs(ndY) > 0.9) {
+      upX = 1;
+      upY = 0;
+      upZ = 0;
     }
 
-    const rx = up.y * nd.z - up.z * nd.y;
-    const ry = up.z * nd.x - up.x * nd.z;
-    const rz = up.x * nd.y - up.y * nd.x;
+    const rx = upY * ndZ - upZ * ndY;
+    const ry = upZ * ndX - upX * ndZ;
+    const rz = upX * ndY - upY * ndX;
     const rLen = Math.hypot(rx, ry, rz) || 1;
-    const nr = { x: rx / rLen, y: ry / rLen, z: rz / rLen };
+    const nrX = rx / rLen;
+    const nrY = ry / rLen;
+    const nrZ = rz / rLen;
 
-    const ux = nd.y * nr.z - nd.z * nr.y;
-    const uy = nd.z * nr.x - nd.x * nr.z;
-    const uz = nd.x * nr.y - nd.y * nr.x;
-    const nu = { x: ux, y: uy, z: uz };
+    const nuX = ndY * nrZ - ndZ * nrY;
+    const nuY = ndZ * nrX - ndX * nrZ;
+    const nuZ = ndX * nrY - ndY * nrX;
 
     const segments = 8;
-    const verts: number[] = [];
-    const ring1: Point3D[] = [];
-    const ring2: Point3D[] = [];
+    const numFloats = segments * 2 * 9;
+    const verts = new Float32Array(numFloats);
+
+    const stepAngle = (Math.PI * 2) / segments;
+    const offsetsX = new Float32Array(segments + 1);
+    const offsetsY = new Float32Array(segments + 1);
+    const offsetsZ = new Float32Array(segments + 1);
 
     for (let i = 0; i <= segments; i++) {
-      const angle = (i / segments) * Math.PI * 2;
+      const angle = i * stepAngle;
       const cos = Math.cos(angle) * radius;
       const sin = Math.sin(angle) * radius;
-      const ox = nr.x * cos + nu.x * sin;
-      const oy = nr.y * cos + nu.y * sin;
-      const oz = nr.z * cos + nu.z * sin;
-      ring1.push({ x: p1.x + ox, y: p1.y + oy, z: p1.z + oz });
-      ring2.push({ x: p2.x + ox, y: p2.y + oy, z: p2.z + oz });
+      offsetsX[i] = nrX * cos + nuX * sin;
+      offsetsY[i] = nrY * cos + nuY * sin;
+      offsetsZ[i] = nrZ * cos + nuZ * sin;
     }
 
-    for (let i = 0; i < segments; i++) {
-      const a1 = ring1[i]!;
-      const a2 = ring1[i + 1]!;
-      const b1 = ring2[i]!;
-      const b2 = ring2[i + 1]!;
+    let idx = 0;
+    const p1x = p1.x;
+    const p1y = p1.y;
+    const p1z = p1.z;
+    const p2x = p2.x;
+    const p2y = p2.y;
+    const p2z = p2.z;
 
-      verts.push(a1.x, a1.y, a1.z, b1.x, b1.y, b1.z, a2.x, a2.y, a2.z);
-      verts.push(a2.x, a2.y, a2.z, b1.x, b1.y, b1.z, b2.x, b2.y, b2.z);
+    for (let i = 0; i < segments; i++) {
+      const ox1 = offsetsX[i]!;
+      const oy1 = offsetsY[i]!;
+      const oz1 = offsetsZ[i]!;
+      const ox2 = offsetsX[i + 1]!;
+      const oy2 = offsetsY[i + 1]!;
+      const oz2 = offsetsZ[i + 1]!;
+
+      const a1x = p1x + ox1;
+      const a1y = p1y + oy1;
+      const a1z = p1z + oz1;
+      const a2x = p1x + ox2;
+      const a2y = p1y + oy2;
+      const a2z = p1z + oz2;
+      const b1x = p2x + ox1;
+      const b1y = p2y + oy1;
+      const b1z = p2z + oz1;
+      const b2x = p2x + ox2;
+      const b2y = p2y + oy2;
+      const b2z = p2z + oz2;
+
+      // Triangle 1: a1, b1, a2
+      verts[idx++] = a1x;
+      verts[idx++] = a1y;
+      verts[idx++] = a1z;
+      verts[idx++] = b1x;
+      verts[idx++] = b1y;
+      verts[idx++] = b1z;
+      verts[idx++] = a2x;
+      verts[idx++] = a2y;
+      verts[idx++] = a2z;
+
+      // Triangle 2: a2, b1, b2
+      verts[idx++] = a2x;
+      verts[idx++] = a2y;
+      verts[idx++] = a2z;
+      verts[idx++] = b1x;
+      verts[idx++] = b1y;
+      verts[idx++] = b1z;
+      verts[idx++] = b2x;
+      verts[idx++] = b2y;
+      verts[idx++] = b2z;
     }
 
     return verts;
   }
 
+  /**
+   * Generates sphere 3D mesh vertices directly into a Float32Array.
+   * Eliminates intermediate Point3D objects and array allocations per frame.
+   */
   private createSphereMesh(
     center: Point3D,
     radius: number,
     segments: number = 8,
-  ): number[] {
-    const verts: number[] = [];
+  ): Float32Array {
+    const numFloats = segments * segments * 2 * 9;
+    const verts = new Float32Array(numFloats);
+    let idx = 0;
+
+    const cx = center.x;
+    const cy = center.y;
+    const cz = center.z;
+    const stepLat = Math.PI / segments;
+    const stepLon = (Math.PI * 2) / segments;
+
     for (let lat = 0; lat < segments; lat++) {
-      const theta1 = (lat / segments) * Math.PI;
-      const theta2 = ((lat + 1) / segments) * Math.PI;
+      const theta1 = lat * stepLat;
+      const theta2 = (lat + 1) * stepLat;
+      const sinT1 = Math.sin(theta1);
+      const cosT1 = Math.cos(theta1);
+      const sinT2 = Math.sin(theta2);
+      const cosT2 = Math.cos(theta2);
 
       for (let lon = 0; lon < segments; lon++) {
-        const phi1 = (lon / segments) * Math.PI * 2;
-        const phi2 = ((lon + 1) / segments) * Math.PI * 2;
+        const phi1 = lon * stepLon;
+        const phi2 = (lon + 1) * stepLon;
+        const sinP1 = Math.sin(phi1);
+        const cosP1 = Math.cos(phi1);
+        const sinP2 = Math.sin(phi2);
+        const cosP2 = Math.cos(phi2);
 
-        const p1 = this.spherePoint(center, radius, theta1, phi1);
-        const p2 = this.spherePoint(center, radius, theta1, phi2);
-        const p3 = this.spherePoint(center, radius, theta2, phi1);
-        const p4 = this.spherePoint(center, radius, theta2, phi2);
+        // p1: theta1, phi1
+        const p1x = cx + radius * sinT1 * cosP1;
+        const p1y = cy + radius * cosT1;
+        const p1z = cz + radius * sinT1 * sinP1;
 
-        verts.push(p1.x, p1.y, p1.z, p3.x, p3.y, p3.z, p2.x, p2.y, p2.z);
-        verts.push(p2.x, p2.y, p2.z, p3.x, p3.y, p3.z, p4.x, p4.y, p4.z);
+        // p2: theta1, phi2
+        const p2x = cx + radius * sinT1 * cosP2;
+        const p2y = cy + radius * cosT1;
+        const p2z = cz + radius * sinT1 * sinP2;
+
+        // p3: theta2, phi1
+        const p3x = cx + radius * sinT2 * cosP1;
+        const p3y = cy + radius * cosT2;
+        const p3z = cz + radius * sinT2 * sinP1;
+
+        // p4: theta2, phi2
+        const p4x = cx + radius * sinT2 * cosP2;
+        const p4y = cy + radius * cosT2;
+        const p4z = cz + radius * sinT2 * sinP2;
+
+        // Triangle 1: p1, p3, p2
+        verts[idx++] = p1x;
+        verts[idx++] = p1y;
+        verts[idx++] = p1z;
+        verts[idx++] = p3x;
+        verts[idx++] = p3y;
+        verts[idx++] = p3z;
+        verts[idx++] = p2x;
+        verts[idx++] = p2y;
+        verts[idx++] = p2z;
+
+        // Triangle 2: p2, p3, p4
+        verts[idx++] = p2x;
+        verts[idx++] = p2y;
+        verts[idx++] = p2z;
+        verts[idx++] = p3x;
+        verts[idx++] = p3y;
+        verts[idx++] = p3z;
+        verts[idx++] = p4x;
+        verts[idx++] = p4y;
+        verts[idx++] = p4z;
       }
     }
+
     return verts;
   }
 
-  private spherePoint(
-    center: Point3D,
-    radius: number,
-    theta: number,
-    phi: number,
-  ): Point3D {
-    return {
-      x: center.x + radius * Math.sin(theta) * Math.cos(phi),
-      y: center.y + radius * Math.cos(theta),
-      z: center.z + radius * Math.sin(theta) * Math.sin(phi),
-    };
-  }
-
+  /**
+   * Generates torus 3D mesh vertices directly into a Float32Array.
+   * Eliminates intermediate Point3D objects and array allocations per frame.
+   */
   private createTorusMesh(
     radius: number,
     tubeRadius: number,
     radialSegments: number = 28,
     tubularSegments: number = 8,
-  ): number[] {
-    const verts: number[] = [];
+  ): Float32Array {
+    const numFloats = radialSegments * tubularSegments * 2 * 9;
+    const verts = new Float32Array(numFloats);
+    let idx = 0;
+
+    const stepU = (Math.PI * 2) / radialSegments;
+    const stepV = (Math.PI * 2) / tubularSegments;
 
     for (let j = 0; j < radialSegments; j++) {
-      const u1 = (j / radialSegments) * Math.PI * 2;
-      const u2 = ((j + 1) / radialSegments) * Math.PI * 2;
+      const u1 = j * stepU;
+      const u2 = (j + 1) * stepU;
+      const cosU1 = Math.cos(u1);
+      const sinU1 = Math.sin(u1);
+      const cosU2 = Math.cos(u2);
+      const sinU2 = Math.sin(u2);
 
       for (let i = 0; i < tubularSegments; i++) {
-        const v1 = (i / tubularSegments) * Math.PI * 2;
-        const v2 = ((i + 1) / tubularSegments) * Math.PI * 2;
+        const v1 = i * stepV;
+        const v2 = (i + 1) * stepV;
+        const cosV1 = Math.cos(v1);
+        const sinV1 = Math.sin(v1);
+        const cosV2 = Math.cos(v2);
+        const sinV2 = Math.sin(v2);
 
-        const p1 = this.torusPoint(u1, v1, radius, tubeRadius);
-        const p2 = this.torusPoint(u2, v1, radius, tubeRadius);
-        const p3 = this.torusPoint(u1, v2, radius, tubeRadius);
-        const p4 = this.torusPoint(u2, v2, radius, tubeRadius);
+        // p1: u1, v1
+        const r1 = radius + tubeRadius * cosV1;
+        const p1x = r1 * cosU1;
+        const p1y = tubeRadius * sinV1;
+        const p1z = r1 * sinU1;
 
-        verts.push(p1.x, p1.y, p1.z, p3.x, p3.y, p3.z, p2.x, p2.y, p2.z);
-        verts.push(p2.x, p2.y, p2.z, p3.x, p3.y, p3.z, p4.x, p4.y, p4.z);
+        // p2: u2, v1
+        const r2 = radius + tubeRadius * cosV1;
+        const p2x = r2 * cosU2;
+        const p2y = tubeRadius * sinV1;
+        const p2z = r2 * sinU2;
+
+        // p3: u1, v2
+        const r3 = radius + tubeRadius * cosV2;
+        const p3x = r3 * cosU1;
+        const p3y = tubeRadius * sinV2;
+        const p3z = r3 * sinU1;
+
+        // p4: u2, v2
+        const r4 = radius + tubeRadius * cosV2;
+        const p4x = r4 * cosU2;
+        const p4y = tubeRadius * sinV2;
+        const p4z = r4 * sinU2;
+
+        // Triangle 1: p1, p3, p2
+        verts[idx++] = p1x;
+        verts[idx++] = p1y;
+        verts[idx++] = p1z;
+        verts[idx++] = p3x;
+        verts[idx++] = p3y;
+        verts[idx++] = p3z;
+        verts[idx++] = p2x;
+        verts[idx++] = p2y;
+        verts[idx++] = p2z;
+
+        // Triangle 2: p2, p3, p4
+        verts[idx++] = p2x;
+        verts[idx++] = p2y;
+        verts[idx++] = p2z;
+        verts[idx++] = p3x;
+        verts[idx++] = p3y;
+        verts[idx++] = p3z;
+        verts[idx++] = p4x;
+        verts[idx++] = p4y;
+        verts[idx++] = p4z;
       }
     }
 
     return verts;
-  }
-
-  private torusPoint(u: number, v: number, r: number, tubeR: number): Point3D {
-    const x = (r + tubeR * Math.cos(v)) * Math.cos(u);
-    const y = tubeR * Math.sin(v);
-    const z = (r + tubeR * Math.cos(v)) * Math.sin(u);
-    return { x, y, z };
   }
 }

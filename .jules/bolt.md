@@ -1,3 +1,4 @@
 ## 2025-05-18 - WebXR 60-120FPS Render Loop Zero-Allocation Pattern
+
 **Learning:** Re-generating 3D geometry JavaScript arrays (`number[]`) and instantiating temporary `Float32Array` objects inside WebGL WebXR frame loops (e.g., `onXRFrame`/`renderScene`) creates ~16MB/s of GC churn, causing noticeable frame drops and battery drain on mobile AR devices.
 **Action:** Pre-allocate static WebGLBuffers in VRAM for fixed local 3D geometries (e.g. reticle toruses, handle spheres) during shader setup, use model matrix translations for positioning, and fill pre-allocated scratch `Float32Array` views for dynamic meshes (e.g. room grids, tube meshes) to maintain 0 B/frame GC pressure.

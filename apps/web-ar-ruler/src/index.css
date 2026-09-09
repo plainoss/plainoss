@@ -476,6 +476,9 @@ body {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
   pointer-events: auto;
   text-align: center;
+  font-family: inherit;
+  cursor: pointer;
+  width: 100%;
   animation: slideIn 0.2s ease forwards;
 }
 

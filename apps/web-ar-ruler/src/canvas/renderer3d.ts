@@ -294,16 +294,19 @@ export class Renderer3D {
 
     ctx.clearRect(0, 0, rect.width, rect.height);
 
+    // Pre-project points once per frame to eliminate redundant matrix/trig projections across render passes
+    const projectedPoints = points.map((p) => this.project(p));
+
     // 1. Draw 3D Ground Grid (or spatial crosshairs in AR mode)
     this.renderGrid();
 
     // 2. Draw polygon fill if in Polygon mode
     if (mode === "polygon" && points.length >= 3) {
-      this.renderPolygon(points, unit);
+      this.renderPolygon(points, projectedPoints, unit);
     }
 
     // 3. Draw connecting lines
-    this.renderLines(points, hoverPoint, mode, unit);
+    this.renderLines(points, projectedPoints, hoverPoint, mode, unit);
 
     // 4. Draw Angle indicator if in Angle mode
     if (mode === "angle" && points.length >= 2) {
@@ -311,7 +314,7 @@ export class Renderer3D {
     }
 
     // 5. Draw 3D point markers
-    this.renderPoints(points, hoverPoint);
+    this.renderPoints(points, projectedPoints, hoverPoint);
   }
 
   private renderGrid(): void {
@@ -371,11 +374,15 @@ export class Renderer3D {
     }
   }
 
-  private renderPolygon(points: Point3D[], unit: DistanceUnit): void {
+  private renderPolygon(
+    points: Point3D[],
+    projectedPoints: ({ x: number; y: number; depth: number } | null)[],
+    unit: DistanceUnit,
+  ): void {
     const ctx = this.ctx;
-    const projected = points
-      .map((p) => this.project(p))
-      .filter((p): p is { x: number; y: number; depth: number } => p !== null);
+    const projected = projectedPoints.filter(
+      (p): p is { x: number; y: number; depth: number } => p !== null,
+    );
 
     if (projected.length < 3) return;
 
@@ -410,20 +417,21 @@ export class Renderer3D {
 
   private renderLines(
     points: Point3D[],
+    projectedPoints: ({ x: number; y: number; depth: number } | null)[],
     hoverPoint: Point3D | null,
     mode: MeasurementMode,
     unit: DistanceUnit,
   ): void {
     const ctx = this.ctx;
 
-    // Segment lines between placed points
+    // Segment lines between placed points using pre-projected screen positions
     for (let i = 0; i < points.length - 1; i++) {
       const p1 = points[i];
       const p2 = points[i + 1];
       if (!p1 || !p2) continue;
 
-      const s1 = this.project(p1);
-      const s2 = this.project(p2);
+      const s1 = projectedPoints[i];
+      const s2 = projectedPoints[i + 1];
 
       if (s1 && s2) {
         ctx.strokeStyle = this.theme.lineStroke;
@@ -448,8 +456,8 @@ export class Renderer3D {
       const pLast = points[points.length - 1];
       const pFirst = points[0];
       if (pLast && pFirst) {
-        const sLast = this.project(pLast);
-        const sFirst = this.project(pFirst);
+        const sLast = projectedPoints[projectedPoints.length - 1];
+        const sFirst = projectedPoints[0];
         if (sLast && sFirst) {
           ctx.strokeStyle = this.theme.lineStroke;
           ctx.lineWidth = 2.5;
@@ -467,7 +475,7 @@ export class Renderer3D {
     if (hoverPoint && points.length > 0) {
       const pLast = points[points.length - 1];
       if (pLast) {
-        const sLast = this.project(pLast);
+        const sLast = projectedPoints[projectedPoints.length - 1];
         const sHover = this.project(hoverPoint);
 
         if (sLast && sHover) {
@@ -525,11 +533,15 @@ export class Renderer3D {
     }
   }
 
-  private renderPoints(points: Point3D[], hoverPoint: Point3D | null): void {
+  private renderPoints(
+    points: Point3D[],
+    projectedPoints: ({ x: number; y: number; depth: number } | null)[],
+    hoverPoint: Point3D | null,
+  ): void {
     const ctx = this.ctx;
 
-    points.forEach((p, idx) => {
-      const sp = this.project(p);
+    points.forEach((_, idx) => {
+      const sp = projectedPoints[idx];
       if (!sp) return;
 
       const isFirst = idx === 0;

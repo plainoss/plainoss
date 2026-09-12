@@ -876,11 +876,9 @@ export class WebXREngine {
     return verts;
   }
 
-  private createSphereMesh(
-    center: Point3D,
-    radius: number,
-    segments: number = 8,
-  ): number[] {
+  // Performance optimization: Pre-computed static 3D mesh templates to eliminate
+  // trig recalculations and object allocation GC pressure in the 60 FPS WebXR render loop.
+  private static generateUnitSphere(segments: number): Float32Array {
     const verts: number[] = [];
     for (let lat = 0; lat < segments; lat++) {
       const theta1 = (lat / segments) * Math.PI;
@@ -890,39 +888,31 @@ export class WebXREngine {
         const phi1 = (lon / segments) * Math.PI * 2;
         const phi2 = ((lon + 1) / segments) * Math.PI * 2;
 
-        const p1 = this.spherePoint(center, radius, theta1, phi1);
-        const p2 = this.spherePoint(center, radius, theta1, phi2);
-        const p3 = this.spherePoint(center, radius, theta2, phi1);
-        const p4 = this.spherePoint(center, radius, theta2, phi2);
+        const sp = (t: number, p: number) => ({
+          x: Math.sin(t) * Math.cos(p),
+          y: Math.cos(t),
+          z: Math.sin(t) * Math.sin(p),
+        });
+
+        const p1 = sp(theta1, phi1);
+        const p2 = sp(theta1, phi2);
+        const p3 = sp(theta2, phi1);
+        const p4 = sp(theta2, phi2);
 
         verts.push(p1.x, p1.y, p1.z, p3.x, p3.y, p3.z, p2.x, p2.y, p2.z);
         verts.push(p2.x, p2.y, p2.z, p3.x, p3.y, p3.z, p4.x, p4.y, p4.z);
       }
     }
-    return verts;
+    return new Float32Array(verts);
   }
 
-  private spherePoint(
-    center: Point3D,
-    radius: number,
-    theta: number,
-    phi: number,
-  ): Point3D {
-    return {
-      x: center.x + radius * Math.sin(theta) * Math.cos(phi),
-      y: center.y + radius * Math.cos(theta),
-      z: center.z + radius * Math.sin(theta) * Math.sin(phi),
-    };
-  }
-
-  private createTorusMesh(
+  private static generateTorusMesh(
     radius: number,
     tubeRadius: number,
     radialSegments: number = 28,
     tubularSegments: number = 8,
-  ): number[] {
+  ): Float32Array {
     const verts: number[] = [];
-
     for (let j = 0; j < radialSegments; j++) {
       const u1 = (j / radialSegments) * Math.PI * 2;
       const u2 = ((j + 1) / radialSegments) * Math.PI * 2;
@@ -931,23 +921,75 @@ export class WebXREngine {
         const v1 = (i / tubularSegments) * Math.PI * 2;
         const v2 = ((i + 1) / tubularSegments) * Math.PI * 2;
 
-        const p1 = this.torusPoint(u1, v1, radius, tubeRadius);
-        const p2 = this.torusPoint(u2, v1, radius, tubeRadius);
-        const p3 = this.torusPoint(u1, v2, radius, tubeRadius);
-        const p4 = this.torusPoint(u2, v2, radius, tubeRadius);
+        const tp = (u: number, v: number) => ({
+          x: (radius + tubeRadius * Math.cos(v)) * Math.cos(u),
+          y: tubeRadius * Math.sin(v),
+          z: (radius + tubeRadius * Math.cos(v)) * Math.sin(u),
+        });
+
+        const p1 = tp(u1, v1);
+        const p2 = tp(u2, v1);
+        const p3 = tp(u1, v2);
+        const p4 = tp(u2, v2);
 
         verts.push(p1.x, p1.y, p1.z, p3.x, p3.y, p3.z, p2.x, p2.y, p2.z);
         verts.push(p2.x, p2.y, p2.z, p3.x, p3.y, p3.z, p4.x, p4.y, p4.z);
       }
     }
-
-    return verts;
+    return new Float32Array(verts);
   }
 
-  private torusPoint(u: number, v: number, r: number, tubeR: number): Point3D {
-    const x = (r + tubeR * Math.cos(v)) * Math.cos(u);
-    const y = tubeR * Math.sin(v);
-    const z = (r + tubeR * Math.cos(v)) * Math.sin(u);
-    return { x, y, z };
+  // Pre-calculated static meshes
+  private static readonly UNIT_SPHERE_8 = WebXREngine.generateUnitSphere(8);
+  private static readonly UNIT_SPHERE_10 = WebXREngine.generateUnitSphere(10);
+  private static readonly UNIT_SPHERE_12 = WebXREngine.generateUnitSphere(12);
+  private static readonly STATIC_RETICLE_TORUS_MESH =
+    WebXREngine.generateTorusMesh(0.06, 0.0035, 28, 8);
+
+  private createSphereMesh(
+    center: Point3D,
+    radius: number,
+    segments: number = 8,
+  ): Float32Array {
+    let template = WebXREngine.UNIT_SPHERE_8;
+    if (segments === 10) template = WebXREngine.UNIT_SPHERE_10;
+    else if (segments === 12) template = WebXREngine.UNIT_SPHERE_12;
+    else if (segments !== 8)
+      template = WebXREngine.generateUnitSphere(segments);
+
+    const len = template.length;
+    const out = new Float32Array(len);
+    const cx = center.x;
+    const cy = center.y;
+    const cz = center.z;
+
+    for (let i = 0; i < len; i += 3) {
+      out[i] = template[i]! * radius + cx;
+      out[i + 1] = template[i + 1]! * radius + cy;
+      out[i + 2] = template[i + 2]! * radius + cz;
+    }
+    return out;
+  }
+
+  private createTorusMesh(
+    radius: number,
+    tubeRadius: number,
+    radialSegments: number = 28,
+    tubularSegments: number = 8,
+  ): Float32Array {
+    if (
+      radius === 0.06 &&
+      tubeRadius === 0.0035 &&
+      radialSegments === 28 &&
+      tubularSegments === 8
+    ) {
+      return WebXREngine.STATIC_RETICLE_TORUS_MESH;
+    }
+    return WebXREngine.generateTorusMesh(
+      radius,
+      tubeRadius,
+      radialSegments,
+      tubularSegments,
+    );
   }
 }

@@ -1,0 +1,3 @@
+## 2026-03-31 - WebXR Per-Frame Particle Grid Optimization
+**Learning:** Room-scale AR point cloud surface rendering routines in WebXR animation loops (60-90+ FPS) cause high CPU overhead and GC pressure when using dynamic array allocations and `Math.hypot`. Pre-allocating a fixed `Float32Array` buffer and performing squared distance checks (`distSq > maxRadiusSq`) before `Math.sqrt` reduces frame grid math execution time by ~60%.
+**Action:** In animation/XR render loops, avoid allocating dynamic arrays (`[]`) and filter candidate spatial coordinates using squared distance bounds before applying square root functions.

@@ -193,7 +193,10 @@ export class WebXREngine {
    * Generates a high-visibility room-scale planar grid of light dots across the entire detected physical floor.
    * Optimized for WebXR 60-90+ FPS loops using squared distance checks, loop factoring, and zero dynamic allocations.
    */
-  private generateRoomPlaneGrid(timeSec: number, camPos: Point3D): Float32Array {
+  private generateRoomPlaneGrid(
+    timeSec: number,
+    camPos: Point3D,
+  ): Float32Array {
     const groundY =
       this.reticlePosition !== null
         ? this.reticlePosition.y
@@ -613,11 +616,7 @@ export class WebXREngine {
       gl.uniformMatrix4fv(uView, false, viewMatrix);
 
       gl.bindBuffer(gl.ARRAY_BUFFER, this.pointCloudBuffer);
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        roomGridDots,
-        gl.DYNAMIC_DRAW,
-      );
+      gl.bufferData(gl.ARRAY_BUFFER, roomGridDots, gl.DYNAMIC_DRAW);
 
       const posAttr = gl.getAttribLocation(this.pointCloudProgram, "aPosition");
       const alphaAttr = gl.getAttribLocation(this.pointCloudProgram, "aAlpha");

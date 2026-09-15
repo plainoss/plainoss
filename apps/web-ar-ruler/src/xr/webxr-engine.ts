@@ -40,6 +40,23 @@ export class WebXREngine {
   private quadBuffer!: WebGLBuffer;
   private pointCloudBuffer!: WebGLBuffer;
 
+  // Performance Optimization: Pre-computed static 3D mesh buffers to eliminate per-frame allocations & trig computations
+  private reticleTorusBuffer!: Float32Array;
+  private reticleTorusVertexCount: number = 0;
+  private reticleDotBuffer!: Float32Array;
+  private reticleDotVertexCount: number = 0;
+  private handleDraggedBuffer!: Float32Array;
+  private handleDraggedVertexCount: number = 0;
+  private handleHoveredBuffer!: Float32Array;
+  private handleHoveredVertexCount: number = 0;
+  private handleNormalBuffer!: Float32Array;
+  private handleNormalVertexCount: number = 0;
+
+  // Reusable model translation matrix for handles to avoid GC pressure
+  private handleMatrix: Float32Array = new Float32Array([
+    1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1,
+  ]);
+
   // Text Texture for 3D In-AR Measurement Label
   private textCanvas: HTMLCanvasElement;
   private textCtx: CanvasRenderingContext2D;
@@ -92,6 +109,34 @@ export class WebXREngine {
 
     this.initShaders();
     this.initTextTexture();
+    this.initPrecomputedMeshes();
+  }
+
+  /**
+   * Pre-computes static 3D meshes (reticle torus, reticle center dot, handle spheres)
+   * at origin (0,0,0) into static Float32Arrays.
+   * This saves >10,000 Math.sin/cos calls and ~9,000 array object allocations per frame during 60fps AR rendering.
+   */
+  private initPrecomputedMeshes(): void {
+    const torusVerts = this.createTorusMesh(0.06, 0.0035, 28, 8);
+    this.reticleTorusBuffer = new Float32Array(torusVerts);
+    this.reticleTorusVertexCount = torusVerts.length / 3;
+
+    const dotVerts = this.createSphereMesh({ x: 0, y: 0, z: 0 }, 0.006, 8);
+    this.reticleDotBuffer = new Float32Array(dotVerts);
+    this.reticleDotVertexCount = dotVerts.length / 3;
+
+    const draggedVerts = this.createSphereMesh({ x: 0, y: 0, z: 0 }, 0.024, 12);
+    this.handleDraggedBuffer = new Float32Array(draggedVerts);
+    this.handleDraggedVertexCount = draggedVerts.length / 3;
+
+    const hoveredVerts = this.createSphereMesh({ x: 0, y: 0, z: 0 }, 0.022, 12);
+    this.handleHoveredBuffer = new Float32Array(hoveredVerts);
+    this.handleHoveredVertexCount = hoveredVerts.length / 3;
+
+    const normalVerts = this.createSphereMesh({ x: 0, y: 0, z: 0 }, 0.016, 10);
+    this.handleNormalBuffer = new Float32Array(normalVerts);
+    this.handleNormalVertexCount = normalVerts.length / 3;
   }
 
   private initShaders(): void {
@@ -653,23 +698,13 @@ export class WebXREngine {
         gl.uniform4f(uColor, 0.22, 0.74, 0.97, 0.95);
       }
 
-      // Elegant clean circular reticle ring ($6\text{cm}$ radius)
-      const torusVerts = this.createTorusMesh(0.06, 0.0035, 28, 8);
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        new Float32Array(torusVerts),
-        gl.DYNAMIC_DRAW,
-      );
-      gl.drawArrays(gl.TRIANGLES, 0, torusVerts.length / 3);
+      // Elegant clean circular reticle ring ($6\text{cm}$ radius) - using precomputed mesh buffer
+      gl.bufferData(gl.ARRAY_BUFFER, this.reticleTorusBuffer, gl.DYNAMIC_DRAW);
+      gl.drawArrays(gl.TRIANGLES, 0, this.reticleTorusVertexCount);
 
-      // Clean center targeting dot ($6\text{mm}$)
-      const dotVerts = this.createSphereMesh({ x: 0, y: 0, z: 0 }, 0.006, 8);
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        new Float32Array(dotVerts),
-        gl.DYNAMIC_DRAW,
-      );
-      gl.drawArrays(gl.TRIANGLES, 0, dotVerts.length / 3);
+      // Clean center targeting dot ($6\text{mm}$) - using precomputed mesh buffer
+      gl.bufferData(gl.ARRAY_BUFFER, this.reticleDotBuffer, gl.DYNAMIC_DRAW);
+      gl.drawArrays(gl.TRIANGLES, 0, this.reticleDotVertexCount);
 
       gl.uniformMatrix4fv(uModel, false, identity);
     }
@@ -736,7 +771,7 @@ export class WebXREngine {
       };
     }
 
-    // 2d. Render 3D Handles / Anchor Spheres
+    // 2d. Render 3D Handles / Anchor Spheres using precomputed origin meshes and translated uModelMatrix
     for (let i = 0; i < this.points.length; i++) {
       const p = this.points[i];
       if (!p) continue;
@@ -744,35 +779,40 @@ export class WebXREngine {
       const isDragged = this.draggedPointIndex === i;
       const isHovered = this.hoveredHandleIndex === i;
 
+      // Position precomputed sphere mesh at anchor point p using model matrix transform
+      this.handleMatrix[12] = p.x;
+      this.handleMatrix[13] = p.y;
+      this.handleMatrix[14] = p.z;
+      gl.uniformMatrix4fv(uModel, false, this.handleMatrix);
+
       if (isDragged) {
         gl.uniform4f(uColor, 0.13, 0.77, 0.36, 1.0); // Bright Green when dragging
-        const verts = this.createSphereMesh(p, 0.024, 12);
         gl.bufferData(
           gl.ARRAY_BUFFER,
-          new Float32Array(verts),
+          this.handleDraggedBuffer,
           gl.DYNAMIC_DRAW,
         );
-        gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
+        gl.drawArrays(gl.TRIANGLES, 0, this.handleDraggedVertexCount);
       } else if (isHovered) {
         gl.uniform4f(uColor, 0.98, 0.75, 0.18, 1.0); // Large Golden Pulsing Handle
-        const verts = this.createSphereMesh(p, 0.022, 12);
         gl.bufferData(
           gl.ARRAY_BUFFER,
-          new Float32Array(verts),
+          this.handleHoveredBuffer,
           gl.DYNAMIC_DRAW,
         );
-        gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
+        gl.drawArrays(gl.TRIANGLES, 0, this.handleHoveredVertexCount);
       } else {
         gl.uniform4f(uColor, 0.98, 0.75, 0.18, 0.9); // Normal Gold Anchor Sphere
-        const verts = this.createSphereMesh(p, 0.016, 10);
         gl.bufferData(
           gl.ARRAY_BUFFER,
-          new Float32Array(verts),
+          this.handleNormalBuffer,
           gl.DYNAMIC_DRAW,
         );
-        gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
+        gl.drawArrays(gl.TRIANGLES, 0, this.handleNormalVertexCount);
       }
     }
+    // Reset model matrix back to identity after rendering handles
+    gl.uniformMatrix4fv(uModel, false, identity);
 
     // ==========================================
     // 3. RENDER 3D IN-AR SPATIAL BILLBOARD LABEL

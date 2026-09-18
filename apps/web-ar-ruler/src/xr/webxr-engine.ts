@@ -40,6 +40,11 @@ export class WebXREngine {
   private quadBuffer!: WebGLBuffer;
   private pointCloudBuffer!: WebGLBuffer;
 
+  // Pre-computed static WebXR geometry buffers (eliminates per-frame trig & heap allocations)
+  private reticleTorusVerts!: Float32Array;
+  private reticleDotVerts!: Float32Array;
+  private unitSphereCache: Map<number, Float32Array> = new Map();
+
   // Text Texture for 3D In-AR Measurement Label
   private textCanvas: HTMLCanvasElement;
   private textCtx: CanvasRenderingContext2D;
@@ -151,6 +156,15 @@ export class WebXREngine {
       -1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1,
     ]);
     gl.bufferData(gl.ARRAY_BUFFER, quadVerts, gl.STATIC_DRAW);
+
+    // Pre-calculate static placement reticle torus and center dot meshes once at setup
+    // to eliminate 1,000+ trig calculations and allocations per 60-90 FPS view render.
+    this.reticleTorusVerts = new Float32Array(
+      this.createTorusMesh(0.06, 0.0035, 28, 8),
+    );
+    this.reticleDotVerts = new Float32Array(
+      this.createSphereMeshRaw({ x: 0, y: 0, z: 0 }, 0.006, 8),
+    );
 
     // 3. High-Visibility 3D Light-Dot Surface Grid Shader
     const vsPointCloud = `
@@ -653,23 +667,13 @@ export class WebXREngine {
         gl.uniform4f(uColor, 0.22, 0.74, 0.97, 0.95);
       }
 
-      // Elegant clean circular reticle ring ($6\text{cm}$ radius)
-      const torusVerts = this.createTorusMesh(0.06, 0.0035, 28, 8);
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        new Float32Array(torusVerts),
-        gl.DYNAMIC_DRAW,
-      );
-      gl.drawArrays(gl.TRIANGLES, 0, torusVerts.length / 3);
+      // Pre-computed static circular reticle ring (6cm radius)
+      gl.bufferData(gl.ARRAY_BUFFER, this.reticleTorusVerts, gl.DYNAMIC_DRAW);
+      gl.drawArrays(gl.TRIANGLES, 0, this.reticleTorusVerts.length / 3);
 
-      // Clean center targeting dot ($6\text{mm}$)
-      const dotVerts = this.createSphereMesh({ x: 0, y: 0, z: 0 }, 0.006, 8);
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        new Float32Array(dotVerts),
-        gl.DYNAMIC_DRAW,
-      );
-      gl.drawArrays(gl.TRIANGLES, 0, dotVerts.length / 3);
+      // Pre-computed static center targeting dot (6mm radius)
+      gl.bufferData(gl.ARRAY_BUFFER, this.reticleDotVerts, gl.DYNAMIC_DRAW);
+      gl.drawArrays(gl.TRIANGLES, 0, this.reticleDotVerts.length / 3);
 
       gl.uniformMatrix4fv(uModel, false, identity);
     }
@@ -876,7 +880,44 @@ export class WebXREngine {
     return verts;
   }
 
+  /**
+   * Returns a pre-computed unit sphere vertex array for the given segment count.
+   */
+  private getUnitSphereVerts(segments: number): Float32Array {
+    let cached = this.unitSphereCache.get(segments);
+    if (!cached) {
+      const raw = this.createSphereMeshRaw({ x: 0, y: 0, z: 0 }, 1.0, segments);
+      cached = new Float32Array(raw);
+      this.unitSphereCache.set(segments, cached);
+    }
+    return cached;
+  }
+
+  /**
+   * Fast sphere mesh generation by scaling/offsetting pre-computed unit sphere vertices,
+   * avoiding repeated Math.sin and Math.cos calls during render frames.
+   */
   private createSphereMesh(
+    center: Point3D,
+    radius: number,
+    segments: number = 8,
+  ): number[] {
+    const unitVerts = this.getUnitSphereVerts(segments);
+    const count = unitVerts.length;
+    const verts = new Array<number>(count);
+    const cx = center.x;
+    const cy = center.y;
+    const cz = center.z;
+
+    for (let i = 0; i < count; i += 3) {
+      verts[i] = cx + unitVerts[i]! * radius;
+      verts[i + 1] = cy + unitVerts[i + 1]! * radius;
+      verts[i + 2] = cz + unitVerts[i + 2]! * radius;
+    }
+    return verts;
+  }
+
+  private createSphereMeshRaw(
     center: Point3D,
     radius: number,
     segments: number = 8,

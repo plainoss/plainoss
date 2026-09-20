@@ -35,29 +35,34 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
         <div className="drawer-header">
           <h2>Measurement History</h2>
           <button
+            type="button"
             className="btn-icon"
             onClick={onClose}
             aria-label="Close history panel"
           >
-            <X size={18} />
+            <X size={18} aria-hidden="true" />
           </button>
         </div>
 
         <div className="drawer-toolbar">
           <button
+            type="button"
             className="btn btn-secondary btn-sm"
             onClick={onCopyAll}
             disabled={records.length === 0}
+            aria-label="Copy all measurement records"
           >
-            <Copy size={14} />
+            <Copy size={14} aria-hidden="true" />
             <span>Copy All</span>
           </button>
           <button
+            type="button"
             className="btn btn-danger btn-sm"
             onClick={onClearAll}
             disabled={records.length === 0}
+            aria-label="Clear all measurement history"
           >
-            <Trash2 size={14} />
+            <Trash2 size={14} aria-hidden="true" />
             <span>Clear History</span>
           </button>
         </div>
@@ -65,7 +70,7 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
         <div className="drawer-list">
           {records.length === 0 ? (
             <div className="empty-state">
-              <span className="empty-icon">
+              <span className="empty-icon" aria-hidden="true">
                 <Ruler size={36} strokeWidth={1.5} />
               </span>
               <p>No saved measurements yet.</p>
@@ -90,17 +95,21 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
                 </div>
                 <div className="history-card-actions">
                   <button
+                    type="button"
                     className="btn btn-secondary btn-xs"
                     onClick={() => onCopyRecord(r)}
+                    aria-label={`Copy measurement record (${r.formatted})`}
                   >
-                    <Copy size={12} />
+                    <Copy size={12} aria-hidden="true" />
                     <span>Copy</span>
                   </button>
                   <button
+                    type="button"
                     className="btn btn-danger btn-xs"
                     onClick={() => onDeleteRecord(r.id)}
+                    aria-label={`Delete measurement record (${r.formatted})`}
                   >
-                    <Trash2 size={12} />
+                    <Trash2 size={12} aria-hidden="true" />
                     <span>Delete</span>
                   </button>
                 </div>

@@ -60,6 +60,15 @@ export class WebXREngine {
   public hoveredHandleIndex: number | null = null;
   public suppressTapUntil: number = 0;
 
+  // Pre-computed Static Mesh Geometry Buffers (eliminates per-frame allocations & GC pressure in 60-120 FPS WebXR render loop)
+  private reticleTorusVerts!: Float32Array;
+  private reticleDotVerts!: Float32Array;
+  private unitSphere12Verts!: Float32Array;
+  private unitSphere10Verts!: Float32Array;
+  private scratchMatrix: Float32Array = new Float32Array([
+    1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1,
+  ]);
+
   constructor(canvas: HTMLCanvasElement, callbacks: XREngineCallbacks) {
     this.callbacks = callbacks;
 
@@ -91,7 +100,24 @@ export class WebXREngine {
     this.textCtx = ctx;
 
     this.initShaders();
+    this.initStaticMeshes();
     this.initTextTexture();
+  }
+
+  private initStaticMeshes(): void {
+    // Pre-calculate static Float32Arrays once during engine initialization
+    this.reticleTorusVerts = new Float32Array(
+      this.createTorusMesh(0.06, 0.0035, 28, 8),
+    );
+    this.reticleDotVerts = new Float32Array(
+      this.createSphereMesh({ x: 0, y: 0, z: 0 }, 0.006, 8),
+    );
+    this.unitSphere12Verts = new Float32Array(
+      this.createSphereMesh({ x: 0, y: 0, z: 0 }, 1.0, 12),
+    );
+    this.unitSphere10Verts = new Float32Array(
+      this.createSphereMesh({ x: 0, y: 0, z: 0 }, 1.0, 10),
+    );
   }
 
   private initShaders(): void {
@@ -523,8 +549,10 @@ export class WebXREngine {
         const timeSec = time * 0.001;
         const camPos = pose.transform.position;
 
-        // Generate high-visibility room-scale physical surface grid dots
-        const roomDots = this.generateRoomPlaneGrid(timeSec, camPos);
+        // Only generate scanning grid dots while scanning for a surface plane
+        const roomDots = !this.reticleMatrix
+          ? this.generateRoomPlaneGrid(timeSec, camPos)
+          : [];
 
         for (const view of pose.views) {
           const viewport = layer.getViewport(view);
@@ -653,23 +681,13 @@ export class WebXREngine {
         gl.uniform4f(uColor, 0.22, 0.74, 0.97, 0.95);
       }
 
-      // Elegant clean circular reticle ring ($6\text{cm}$ radius)
-      const torusVerts = this.createTorusMesh(0.06, 0.0035, 28, 8);
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        new Float32Array(torusVerts),
-        gl.DYNAMIC_DRAW,
-      );
-      gl.drawArrays(gl.TRIANGLES, 0, torusVerts.length / 3);
+      // Draw pre-computed reticle torus ring
+      gl.bufferData(gl.ARRAY_BUFFER, this.reticleTorusVerts, gl.DYNAMIC_DRAW);
+      gl.drawArrays(gl.TRIANGLES, 0, this.reticleTorusVerts.length / 3);
 
-      // Clean center targeting dot ($6\text{mm}$)
-      const dotVerts = this.createSphereMesh({ x: 0, y: 0, z: 0 }, 0.006, 8);
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        new Float32Array(dotVerts),
-        gl.DYNAMIC_DRAW,
-      );
-      gl.drawArrays(gl.TRIANGLES, 0, dotVerts.length / 3);
+      // Draw pre-computed center targeting dot
+      gl.bufferData(gl.ARRAY_BUFFER, this.reticleDotVerts, gl.DYNAMIC_DRAW);
+      gl.drawArrays(gl.TRIANGLES, 0, this.reticleDotVerts.length / 3);
 
       gl.uniformMatrix4fv(uModel, false, identity);
     }
@@ -736,7 +754,20 @@ export class WebXREngine {
       };
     }
 
-    // 2d. Render 3D Handles / Anchor Spheres
+    // Helper to render unit sphere at point p with uniform scale radius r without re-allocating memory
+    const drawSphereAt = (p: Point3D, r: number, verts: Float32Array) => {
+      this.scratchMatrix[0] = r;
+      this.scratchMatrix[5] = r;
+      this.scratchMatrix[10] = r;
+      this.scratchMatrix[12] = p.x;
+      this.scratchMatrix[13] = p.y;
+      this.scratchMatrix[14] = p.z;
+      gl.uniformMatrix4fv(uModel, false, this.scratchMatrix);
+      gl.bufferData(gl.ARRAY_BUFFER, verts, gl.DYNAMIC_DRAW);
+      gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
+    };
+
+    // 2d. Render 3D Handles / Anchor Spheres using pre-computed unit sphere meshes
     for (let i = 0; i < this.points.length; i++) {
       const p = this.points[i];
       if (!p) continue;
@@ -746,33 +777,16 @@ export class WebXREngine {
 
       if (isDragged) {
         gl.uniform4f(uColor, 0.13, 0.77, 0.36, 1.0); // Bright Green when dragging
-        const verts = this.createSphereMesh(p, 0.024, 12);
-        gl.bufferData(
-          gl.ARRAY_BUFFER,
-          new Float32Array(verts),
-          gl.DYNAMIC_DRAW,
-        );
-        gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
+        drawSphereAt(p, 0.024, this.unitSphere12Verts);
       } else if (isHovered) {
         gl.uniform4f(uColor, 0.98, 0.75, 0.18, 1.0); // Large Golden Pulsing Handle
-        const verts = this.createSphereMesh(p, 0.022, 12);
-        gl.bufferData(
-          gl.ARRAY_BUFFER,
-          new Float32Array(verts),
-          gl.DYNAMIC_DRAW,
-        );
-        gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
+        drawSphereAt(p, 0.022, this.unitSphere12Verts);
       } else {
         gl.uniform4f(uColor, 0.98, 0.75, 0.18, 0.9); // Normal Gold Anchor Sphere
-        const verts = this.createSphereMesh(p, 0.016, 10);
-        gl.bufferData(
-          gl.ARRAY_BUFFER,
-          new Float32Array(verts),
-          gl.DYNAMIC_DRAW,
-        );
-        gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
+        drawSphereAt(p, 0.016, this.unitSphere10Verts);
       }
     }
+    gl.uniformMatrix4fv(uModel, false, identity);
 
     // ==========================================
     // 3. RENDER 3D IN-AR SPATIAL BILLBOARD LABEL

@@ -46,6 +46,12 @@ export class WebXREngine {
   private textTexture!: WebGLTexture;
   private lastRenderedText: string = "";
 
+  // Pre-computed Static Geometry Buffers (Performance Optimization to eliminate per-frame allocations & trig computations)
+  private cachedTorusVerts!: Float32Array;
+  private cachedReticleDotVerts!: Float32Array;
+  private cachedUnitSphereVerts!: Float32Array;
+  private sphereTransformBuffer!: Float32Array;
+
   // Measurement State
   public points: Point3D[] = [];
   public reticlePosition: Point3D | null = null;
@@ -92,6 +98,30 @@ export class WebXREngine {
 
     this.initShaders();
     this.initTextTexture();
+    this.initPrecomputedMeshes();
+  }
+
+  /**
+   * Performance Optimization: Pre-compute static geometry meshes once during initialization.
+   * Eliminates per-frame trigonometric calculations (Math.sin/Math.cos) and Float32Array allocations inside WebXR render loop (60-90 FPS).
+   */
+  private initPrecomputedMeshes(): void {
+    // 1. Static Reticle Torus Mesh (radius=0.06, tubeRadius=0.0035, radialSegments=28, tubularSegments=8)
+    const torusVerts = this.createTorusMesh(0.06, 0.0035, 28, 8);
+    this.cachedTorusVerts = new Float32Array(torusVerts);
+
+    // 2. Static Reticle Center Targeting Dot Mesh (center=(0,0,0), radius=0.006, segments=8)
+    const dotVerts = this.createSphereMesh({ x: 0, y: 0, z: 0 }, 0.006, 8);
+    this.cachedReticleDotVerts = new Float32Array(dotVerts);
+
+    // 3. Static Unit Sphere Mesh (center=(0,0,0), radius=1.0, segments=12) for fast scaling/translating handles
+    const unitSphereVerts = this.createSphereMesh(
+      { x: 0, y: 0, z: 0 },
+      1.0,
+      12,
+    );
+    this.cachedUnitSphereVerts = new Float32Array(unitSphereVerts);
+    this.sphereTransformBuffer = new Float32Array(unitSphereVerts.length);
   }
 
   private initShaders(): void {
@@ -653,23 +683,17 @@ export class WebXREngine {
         gl.uniform4f(uColor, 0.22, 0.74, 0.97, 0.95);
       }
 
-      // Elegant clean circular reticle ring ($6\text{cm}$ radius)
-      const torusVerts = this.createTorusMesh(0.06, 0.0035, 28, 8);
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        new Float32Array(torusVerts),
-        gl.DYNAMIC_DRAW,
-      );
-      gl.drawArrays(gl.TRIANGLES, 0, torusVerts.length / 3);
+      // Elegant clean circular reticle ring ($6\text{cm}$ radius) - Uses pre-computed Float32Array buffer
+      gl.bufferData(gl.ARRAY_BUFFER, this.cachedTorusVerts, gl.DYNAMIC_DRAW);
+      gl.drawArrays(gl.TRIANGLES, 0, this.cachedTorusVerts.length / 3);
 
-      // Clean center targeting dot ($6\text{mm}$)
-      const dotVerts = this.createSphereMesh({ x: 0, y: 0, z: 0 }, 0.006, 8);
+      // Clean center targeting dot ($6\text{mm}$) - Uses pre-computed Float32Array buffer
       gl.bufferData(
         gl.ARRAY_BUFFER,
-        new Float32Array(dotVerts),
+        this.cachedReticleDotVerts,
         gl.DYNAMIC_DRAW,
       );
-      gl.drawArrays(gl.TRIANGLES, 0, dotVerts.length / 3);
+      gl.drawArrays(gl.TRIANGLES, 0, this.cachedReticleDotVerts.length / 3);
 
       gl.uniformMatrix4fv(uModel, false, identity);
     }
@@ -736,7 +760,7 @@ export class WebXREngine {
       };
     }
 
-    // 2d. Render 3D Handles / Anchor Spheres
+    // 2d. Render 3D Handles / Anchor Spheres (Transformed from pre-computed unit sphere without trig loop allocations)
     for (let i = 0; i < this.points.length; i++) {
       const p = this.points[i];
       if (!p) continue;
@@ -744,34 +768,25 @@ export class WebXREngine {
       const isDragged = this.draggedPointIndex === i;
       const isHovered = this.hoveredHandleIndex === i;
 
+      let radius = 0.016;
       if (isDragged) {
         gl.uniform4f(uColor, 0.13, 0.77, 0.36, 1.0); // Bright Green when dragging
-        const verts = this.createSphereMesh(p, 0.024, 12);
-        gl.bufferData(
-          gl.ARRAY_BUFFER,
-          new Float32Array(verts),
-          gl.DYNAMIC_DRAW,
-        );
-        gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
+        radius = 0.024;
       } else if (isHovered) {
         gl.uniform4f(uColor, 0.98, 0.75, 0.18, 1.0); // Large Golden Pulsing Handle
-        const verts = this.createSphereMesh(p, 0.022, 12);
-        gl.bufferData(
-          gl.ARRAY_BUFFER,
-          new Float32Array(verts),
-          gl.DYNAMIC_DRAW,
-        );
-        gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
+        radius = 0.022;
       } else {
         gl.uniform4f(uColor, 0.98, 0.75, 0.18, 0.9); // Normal Gold Anchor Sphere
-        const verts = this.createSphereMesh(p, 0.016, 10);
-        gl.bufferData(
-          gl.ARRAY_BUFFER,
-          new Float32Array(verts),
-          gl.DYNAMIC_DRAW,
-        );
-        gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
+        radius = 0.016;
       }
+
+      this.fillTransformedSphereBuffer(p, radius);
+      gl.bufferData(
+        gl.ARRAY_BUFFER,
+        this.sphereTransformBuffer,
+        gl.DYNAMIC_DRAW,
+      );
+      gl.drawArrays(gl.TRIANGLES, 0, this.sphereTransformBuffer.length / 3);
     }
 
     // ==========================================
@@ -818,6 +833,25 @@ export class WebXREngine {
       gl.vertexAttribPointer(cornerAttr, 2, gl.FLOAT, false, 0, 0);
 
       gl.drawArrays(gl.TRIANGLES, 0, 6);
+    }
+  }
+
+  /**
+   * Fast arithmetic scaling and translation of pre-computed unit sphere vertices into zero-allocation buffer.
+   * Fast arithmetic only (no trigonometric calls, no memory allocations).
+   */
+  private fillTransformedSphereBuffer(center: Point3D, radius: number): void {
+    const src = this.cachedUnitSphereVerts;
+    const dst = this.sphereTransformBuffer;
+    const len = src.length;
+    const cx = center.x;
+    const cy = center.y;
+    const cz = center.z;
+
+    for (let i = 0; i < len; i += 3) {
+      dst[i] = src[i]! * radius + cx;
+      dst[i + 1] = src[i + 1]! * radius + cy;
+      dst[i + 2] = src[i + 2]! * radius + cz;
     }
   }
 

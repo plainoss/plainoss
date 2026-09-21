@@ -48,6 +48,8 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
             className="btn btn-secondary btn-sm"
             onClick={onCopyAll}
             disabled={records.length === 0}
+            aria-label="Copy all measurement records"
+            title="Copy all measurement records"
           >
             <Copy size={14} />
             <span>Copy All</span>
@@ -56,6 +58,8 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
             className="btn btn-danger btn-sm"
             onClick={onClearAll}
             disabled={records.length === 0}
+            aria-label="Clear history"
+            title="Clear all measurement records"
           >
             <Trash2 size={14} />
             <span>Clear History</span>
@@ -92,6 +96,8 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
                   <button
                     className="btn btn-secondary btn-xs"
                     onClick={() => onCopyRecord(r)}
+                    aria-label={`Copy record ${r.formatted}`}
+                    title={`Copy measurement record (${r.formatted})`}
                   >
                     <Copy size={12} />
                     <span>Copy</span>
@@ -99,6 +105,8 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
                   <button
                     className="btn btn-danger btn-xs"
                     onClick={() => onDeleteRecord(r.id)}
+                    aria-label={`Delete record ${r.formatted}`}
+                    title={`Delete measurement record (${r.formatted})`}
                   >
                     <Trash2 size={12} />
                     <span>Delete</span>

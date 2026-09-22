@@ -477,6 +477,9 @@ body {
   pointer-events: auto;
   text-align: center;
   animation: slideIn 0.2s ease forwards;
+  cursor: pointer;
+  font-family: inherit;
+  width: 100%;
 }
 
 .toast-success {

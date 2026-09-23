@@ -212,14 +212,22 @@ export class WebXREngine {
     this.torusVertexCount = torusVerts.length / 3;
     this.torusBuffer = gl.createBuffer()!;
     gl.bindBuffer(gl.ARRAY_BUFFER, this.torusBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(torusVerts), gl.STATIC_DRAW);
+    gl.bufferData(
+      gl.ARRAY_BUFFER,
+      new Float32Array(torusVerts),
+      gl.STATIC_DRAW,
+    );
 
     // Precompute unit sphere mesh (radius 1.0m, origin center, 12 segments)
     const sphereVerts = this.createSphereMesh({ x: 0, y: 0, z: 0 }, 1.0, 12);
     this.unitSphereVertexCount = sphereVerts.length / 3;
     this.unitSphereBuffer = gl.createBuffer()!;
     gl.bindBuffer(gl.ARRAY_BUFFER, this.unitSphereBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(sphereVerts), gl.STATIC_DRAW);
+    gl.bufferData(
+      gl.ARRAY_BUFFER,
+      new Float32Array(sphereVerts),
+      gl.STATIC_DRAW,
+    );
   }
 
   /**
@@ -612,10 +620,22 @@ export class WebXREngine {
     p: Point3D,
     scale: number,
   ): void {
-    out[0] = scale; out[1] = 0;     out[2] = 0;     out[3] = 0;
-    out[4] = 0;     out[5] = scale; out[6] = 0;     out[7] = 0;
-    out[8] = 0;     out[9] = 0;     out[10] = scale;out[11] = 0;
-    out[12] = p.x;  out[13] = p.y;  out[14] = p.z;  out[15] = 1;
+    out[0] = scale;
+    out[1] = 0;
+    out[2] = 0;
+    out[3] = 0;
+    out[4] = 0;
+    out[5] = scale;
+    out[6] = 0;
+    out[7] = 0;
+    out[8] = 0;
+    out[9] = 0;
+    out[10] = scale;
+    out[11] = 0;
+    out[12] = p.x;
+    out[13] = p.y;
+    out[14] = p.z;
+    out[15] = 1;
   }
 
   private transformMatrixWithScale(
@@ -893,11 +913,7 @@ export class WebXREngine {
    * Fills pre-allocated Float32Array buffer with 3D cylinder laser line geometry.
    * Avoids JS object allocations and array pushes per frame.
    */
-  private fillCylinderMesh(
-    p1: Point3D,
-    p2: Point3D,
-    radius: number,
-  ): number {
+  private fillCylinderMesh(p1: Point3D, p2: Point3D, radius: number): number {
     const dirX = p2.x - p1.x;
     const dirY = p2.y - p1.y;
     const dirZ = p2.z - p1.z;
@@ -950,14 +966,26 @@ export class WebXREngine {
       const oz2 = nrz * cos2 + nuz * sin2;
 
       // Triangle 1: a1, b1, a2
-      arr[ptr++] = p1.x + ox1; arr[ptr++] = p1.y + oy1; arr[ptr++] = p1.z + oz1;
-      arr[ptr++] = p2.x + ox1; arr[ptr++] = p2.y + oy1; arr[ptr++] = p2.z + oz1;
-      arr[ptr++] = p1.x + ox2; arr[ptr++] = p1.y + oy2; arr[ptr++] = p1.z + oz2;
+      arr[ptr++] = p1.x + ox1;
+      arr[ptr++] = p1.y + oy1;
+      arr[ptr++] = p1.z + oz1;
+      arr[ptr++] = p2.x + ox1;
+      arr[ptr++] = p2.y + oy1;
+      arr[ptr++] = p2.z + oz1;
+      arr[ptr++] = p1.x + ox2;
+      arr[ptr++] = p1.y + oy2;
+      arr[ptr++] = p1.z + oz2;
 
       // Triangle 2: a2, b1, b2
-      arr[ptr++] = p1.x + ox2; arr[ptr++] = p1.y + oy2; arr[ptr++] = p1.z + oz2;
-      arr[ptr++] = p2.x + ox1; arr[ptr++] = p2.y + oy1; arr[ptr++] = p2.z + oz1;
-      arr[ptr++] = p2.x + ox2; arr[ptr++] = p2.y + oy2; arr[ptr++] = p2.z + oz2;
+      arr[ptr++] = p1.x + ox2;
+      arr[ptr++] = p1.y + oy2;
+      arr[ptr++] = p1.z + oz2;
+      arr[ptr++] = p2.x + ox1;
+      arr[ptr++] = p2.y + oy1;
+      arr[ptr++] = p2.z + oz1;
+      arr[ptr++] = p2.x + ox2;
+      arr[ptr++] = p2.y + oy2;
+      arr[ptr++] = p2.z + oz2;
     }
 
     return ptr / 3; // Total vertices count

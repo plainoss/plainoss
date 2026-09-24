@@ -40,6 +40,12 @@ export class WebXREngine {
   private quadBuffer!: WebGLBuffer;
   private pointCloudBuffer!: WebGLBuffer;
 
+  // Static Pre-computed Geometry Caches (Zero GC allocations in render loop)
+  private staticTorusVerts: Float32Array;
+  private staticReticleDotVerts: Float32Array;
+  private staticUnitSphereVerts: Float32Array;
+  private handleMatrix = new Float32Array(16);
+
   // Text Texture for 3D In-AR Measurement Label
   private textCanvas: HTMLCanvasElement;
   private textCtx: CanvasRenderingContext2D;
@@ -79,6 +85,17 @@ export class WebXREngine {
       throw new Error("WebGL not supported for WebXR");
     }
     this.gl = gl as WebGL2RenderingContext;
+
+    // Pre-calculate static meshes to eliminate CPU trig calculations and GC allocations in render loop
+    this.staticTorusVerts = new Float32Array(
+      this.createTorusMesh(0.06, 0.0035, 28, 8),
+    );
+    this.staticReticleDotVerts = new Float32Array(
+      this.createSphereMesh({ x: 0, y: 0, z: 0 }, 0.006, 8),
+    );
+    this.staticUnitSphereVerts = new Float32Array(
+      this.createSphereMesh({ x: 0, y: 0, z: 0 }, 1.0, 10),
+    );
 
     // Create offscreen text canvas for dynamic 3D spatial billboard textures
     this.textCanvas = document.createElement("canvas");
@@ -523,8 +540,11 @@ export class WebXREngine {
         const timeSec = time * 0.001;
         const camPos = pose.transform.position;
 
-        // Generate high-visibility room-scale physical surface grid dots
-        const roomDots = this.generateRoomPlaneGrid(timeSec, camPos);
+        // OPTIMIZATION: Only generate room surface grid dots when scanning (reticleMatrix is null)
+        // Avoids ~1,800 iterations of trig math & array allocations per frame when surface is active
+        const roomDots = !this.reticleMatrix
+          ? this.generateRoomPlaneGrid(timeSec, camPos)
+          : [];
 
         for (const view of pose.views) {
           const viewport = layer.getViewport(view);
@@ -653,23 +673,17 @@ export class WebXREngine {
         gl.uniform4f(uColor, 0.22, 0.74, 0.97, 0.95);
       }
 
-      // Elegant clean circular reticle ring ($6\text{cm}$ radius)
-      const torusVerts = this.createTorusMesh(0.06, 0.0035, 28, 8);
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        new Float32Array(torusVerts),
-        gl.DYNAMIC_DRAW,
-      );
-      gl.drawArrays(gl.TRIANGLES, 0, torusVerts.length / 3);
+      // Elegant clean circular reticle ring (6cm radius) using cached static mesh
+      gl.bufferData(gl.ARRAY_BUFFER, this.staticTorusVerts, gl.DYNAMIC_DRAW);
+      gl.drawArrays(gl.TRIANGLES, 0, this.staticTorusVerts.length / 3);
 
-      // Clean center targeting dot ($6\text{mm}$)
-      const dotVerts = this.createSphereMesh({ x: 0, y: 0, z: 0 }, 0.006, 8);
+      // Clean center targeting dot (6mm) using cached static mesh
       gl.bufferData(
         gl.ARRAY_BUFFER,
-        new Float32Array(dotVerts),
+        this.staticReticleDotVerts,
         gl.DYNAMIC_DRAW,
       );
-      gl.drawArrays(gl.TRIANGLES, 0, dotVerts.length / 3);
+      gl.drawArrays(gl.TRIANGLES, 0, this.staticReticleDotVerts.length / 3);
 
       gl.uniformMatrix4fv(uModel, false, identity);
     }
@@ -736,42 +750,45 @@ export class WebXREngine {
       };
     }
 
-    // 2d. Render 3D Handles / Anchor Spheres
-    for (let i = 0; i < this.points.length; i++) {
-      const p = this.points[i];
-      if (!p) continue;
+    // 2d. Render 3D Handles / Anchor Spheres using cached unit sphere & matrix scaling
+    if (this.points.length > 0) {
+      gl.bufferData(
+        gl.ARRAY_BUFFER,
+        this.staticUnitSphereVerts,
+        gl.DYNAMIC_DRAW,
+      );
 
-      const isDragged = this.draggedPointIndex === i;
-      const isHovered = this.hoveredHandleIndex === i;
+      for (let i = 0; i < this.points.length; i++) {
+        const p = this.points[i];
+        if (!p) continue;
 
-      if (isDragged) {
-        gl.uniform4f(uColor, 0.13, 0.77, 0.36, 1.0); // Bright Green when dragging
-        const verts = this.createSphereMesh(p, 0.024, 12);
-        gl.bufferData(
-          gl.ARRAY_BUFFER,
-          new Float32Array(verts),
-          gl.DYNAMIC_DRAW,
+        const isDragged = this.draggedPointIndex === i;
+        const isHovered = this.hoveredHandleIndex === i;
+
+        let radius = 0.016;
+        if (isDragged) {
+          gl.uniform4f(uColor, 0.13, 0.77, 0.36, 1.0); // Bright Green when dragging
+          radius = 0.024;
+        } else if (isHovered) {
+          gl.uniform4f(uColor, 0.98, 0.75, 0.18, 1.0); // Large Golden Pulsing Handle
+          radius = 0.022;
+        } else {
+          gl.uniform4f(uColor, 0.98, 0.75, 0.18, 0.9); // Normal Gold Anchor Sphere
+          radius = 0.016;
+        }
+
+        this.setScaleTranslationMatrix(
+          this.handleMatrix,
+          radius,
+          p.x,
+          p.y,
+          p.z,
         );
-        gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
-      } else if (isHovered) {
-        gl.uniform4f(uColor, 0.98, 0.75, 0.18, 1.0); // Large Golden Pulsing Handle
-        const verts = this.createSphereMesh(p, 0.022, 12);
-        gl.bufferData(
-          gl.ARRAY_BUFFER,
-          new Float32Array(verts),
-          gl.DYNAMIC_DRAW,
-        );
-        gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
-      } else {
-        gl.uniform4f(uColor, 0.98, 0.75, 0.18, 0.9); // Normal Gold Anchor Sphere
-        const verts = this.createSphereMesh(p, 0.016, 10);
-        gl.bufferData(
-          gl.ARRAY_BUFFER,
-          new Float32Array(verts),
-          gl.DYNAMIC_DRAW,
-        );
-        gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
+        gl.uniformMatrix4fv(uModel, false, this.handleMatrix);
+        gl.drawArrays(gl.TRIANGLES, 0, this.staticUnitSphereVerts.length / 3);
       }
+
+      gl.uniformMatrix4fv(uModel, false, identity);
     }
 
     // ==========================================
@@ -949,5 +966,34 @@ export class WebXREngine {
     const y = tubeR * Math.sin(v);
     const z = (r + tubeR * Math.cos(v)) * Math.sin(u);
     return { x, y, z };
+  }
+
+  /**
+   * Helper to construct a column-major scale + translation matrix without object allocation.
+   */
+  private setScaleTranslationMatrix(
+    mat: Float32Array,
+    r: number,
+    x: number,
+    y: number,
+    z: number,
+  ): Float32Array {
+    mat[0] = r;
+    mat[1] = 0;
+    mat[2] = 0;
+    mat[3] = 0;
+    mat[4] = 0;
+    mat[5] = r;
+    mat[6] = 0;
+    mat[7] = 0;
+    mat[8] = 0;
+    mat[9] = 0;
+    mat[10] = r;
+    mat[11] = 0;
+    mat[12] = x;
+    mat[13] = y;
+    mat[14] = z;
+    mat[15] = 1;
+    return mat;
   }
 }

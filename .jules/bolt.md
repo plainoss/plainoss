@@ -1,0 +1,4 @@
+## 2025-02-18 - Avoid Per-Frame Geometry Generation and Dead Computation in WebXR Animation Loops
+
+**Learning:** In WebXR applications running at 60-120 FPS, computing procedural geometry (trig loops with `Math.sin`/`Math.cos`) and allocating temporary arrays inside `requestAnimationFrame` creates severe GC pressure and frame drops. Furthermore, running expensive fallback grid computations (1,800+ grid points) even when a surface hit reticle is active wastes CPU cycles on dead computations that are never drawn.
+**Action:** Always pre-calculate and cache static geometry (`Float32Array`) at initialization. Scale and translate geometries using the shader model matrix uniform `uModelMatrix` rather than recalculating vertex arrays on the CPU. Ensure scanning grid generators short-circuit immediately when a reticle matrix is present.

@@ -48,6 +48,16 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
             className="btn btn-secondary btn-sm"
             onClick={onCopyAll}
             disabled={records.length === 0}
+            title={
+              records.length === 0
+                ? "No history to copy"
+                : "Copy all history records"
+            }
+            aria-label={
+              records.length === 0
+                ? "Copy all measurement history (disabled)"
+                : "Copy all measurement history"
+            }
           >
             <Copy size={14} />
             <span>Copy All</span>
@@ -56,6 +66,16 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
             className="btn btn-danger btn-sm"
             onClick={onClearAll}
             disabled={records.length === 0}
+            title={
+              records.length === 0
+                ? "No history to clear"
+                : "Clear all history records"
+            }
+            aria-label={
+              records.length === 0
+                ? "Clear history (disabled)"
+                : "Clear all measurement history"
+            }
           >
             <Trash2 size={14} />
             <span>Clear History</span>
@@ -92,6 +112,8 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
                   <button
                     className="btn btn-secondary btn-xs"
                     onClick={() => onCopyRecord(r)}
+                    aria-label={`Copy measurement: ${r.formatted}`}
+                    title={`Copy measurement: ${r.formatted}`}
                   >
                     <Copy size={12} />
                     <span>Copy</span>
@@ -99,6 +121,8 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
                   <button
                     className="btn btn-danger btn-xs"
                     onClick={() => onDeleteRecord(r.id)}
+                    aria-label={`Delete measurement: ${r.formatted}`}
+                    title={`Delete measurement: ${r.formatted}`}
                   >
                     <Trash2 size={12} />
                     <span>Delete</span>

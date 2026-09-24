@@ -95,6 +95,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({
             aria-checked={unit === u}
             className={`btn-segment btn-unit ${unit === u ? "active" : ""}`}
             onClick={() => onSelectUnit(u)}
+            title={`Switch unit to ${u}`}
+            aria-label={`Switch unit to ${u}`}
           >
             {u}
           </button>
@@ -121,7 +123,10 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           className="btn btn-secondary btn-icon-text"
           onClick={onUndo}
           disabled={pointCount === 0}
-          title="Undo last point (Z)"
+          title={pointCount === 0 ? "No points to undo" : "Undo last point (Z)"}
+          aria-label={
+            pointCount === 0 ? "Undo last point (disabled)" : "Undo last point"
+          }
         >
           <span aria-hidden="true">
             <Undo2 size={15} />
@@ -133,7 +138,14 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           className="btn btn-danger btn-icon-text"
           onClick={onClear}
           disabled={pointCount === 0}
-          title="Clear all points (Esc)"
+          title={
+            pointCount === 0 ? "No points to clear" : "Clear all points (Esc)"
+          }
+          aria-label={
+            pointCount === 0
+              ? "Clear all points (disabled)"
+              : "Clear all points"
+          }
         >
           <span aria-hidden="true">
             <Trash2 size={15} />

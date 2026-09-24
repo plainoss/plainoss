@@ -89,6 +89,11 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({
     }
   }
 
+  // Min points required to enable saving
+  const minSavePoints = mode === "angle" || mode === "polygon" ? 3 : 2;
+  const isSaveDisabled = points.length < minSavePoints;
+  const isCopyDisabled = points.length === 0;
+
   // Sub metrics
   const bbox = points.length > 0 ? boundingBox3D(points) : null;
   const perimeter =
@@ -118,8 +123,17 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({
                 primaryLabel,
               )
             }
-            disabled={points.length === 0}
-            title="Copy value to clipboard"
+            disabled={isCopyDisabled}
+            title={
+              isCopyDisabled
+                ? "Place at least 1 point to copy"
+                : "Copy value to clipboard"
+            }
+            aria-label={
+              isCopyDisabled
+                ? "Copy measurement value (disabled)"
+                : `Copy ${primaryLabel}: ${primaryValue} ${primaryUnit}`
+            }
           >
             <Copy size={14} />
             <span>Copy</span>
@@ -127,10 +141,17 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({
           <button
             className="btn btn-primary btn-sm"
             onClick={onSave}
-            disabled={
-              points.length < (mode === "angle" || mode === "polygon" ? 3 : 2)
+            disabled={isSaveDisabled}
+            title={
+              isSaveDisabled
+                ? `Place at least ${minSavePoints} points to save`
+                : "Save to Measurement History"
             }
-            title="Save to Measurement History"
+            aria-label={
+              isSaveDisabled
+                ? `Save measurement (requires at least ${minSavePoints} points)`
+                : `Save ${primaryLabel} to history`
+            }
           >
             <BookmarkCheck size={14} />
             <span>Save</span>

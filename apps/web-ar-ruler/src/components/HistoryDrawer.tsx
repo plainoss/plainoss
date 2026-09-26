@@ -49,7 +49,11 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
             onClick={onCopyAll}
             disabled={records.length === 0}
             aria-label="Copy all measurement records"
-            title={records.length === 0 ? "No measurements to copy" : "Copy all measurements to clipboard"}
+            title={
+              records.length === 0
+                ? "No measurements to copy"
+                : "Copy all measurements to clipboard"
+            }
           >
             <Copy size={14} aria-hidden="true" />
             <span>Copy All</span>
@@ -59,7 +63,11 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
             onClick={onClearAll}
             disabled={records.length === 0}
             aria-label="Clear all measurement history"
-            title={records.length === 0 ? "No measurements to clear" : "Clear all measurement history"}
+            title={
+              records.length === 0
+                ? "No measurements to clear"
+                : "Clear all measurement history"
+            }
           >
             <Trash2 size={14} aria-hidden="true" />
             <span>Clear History</span>

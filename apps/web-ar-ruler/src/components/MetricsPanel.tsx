@@ -94,6 +94,18 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({
   const perimeter =
     points.length >= 3 && mode === "polygon" ? perimeter3D(points) : null;
 
+  const minPointsRequired = mode === "angle" || mode === "polygon" ? 3 : 2;
+  const canSave = points.length >= minPointsRequired;
+  const canCopy = points.length > 0;
+
+  const copyTooltip = canCopy
+    ? "Copy value to clipboard"
+    : "Place at least 1 point to copy measurement";
+
+  const saveTooltip = canSave
+    ? "Save to Measurement History"
+    : `Place at least ${minPointsRequired} points to save measurement`;
+
   return (
     <div className="metrics-card">
       <div className="metrics-header">
@@ -118,8 +130,9 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({
                 primaryLabel,
               )
             }
-            disabled={points.length === 0}
-            title="Copy value to clipboard"
+            disabled={!canCopy}
+            title={copyTooltip}
+            aria-label={copyTooltip}
           >
             <Copy size={14} />
             <span>Copy</span>
@@ -127,10 +140,9 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({
           <button
             className="btn btn-primary btn-sm"
             onClick={onSave}
-            disabled={
-              points.length < (mode === "angle" || mode === "polygon" ? 3 : 2)
-            }
-            title="Save to Measurement History"
+            disabled={!canSave}
+            title={saveTooltip}
+            aria-label={saveTooltip}
           >
             <BookmarkCheck size={14} />
             <span>Save</span>

@@ -26,6 +26,15 @@ export const ToastContainer: React.FC<ToastProps> = ({ toasts, onDismiss }) => {
           key={t.id}
           className={`toast toast-${t.type || "info"}`}
           onClick={() => onDismiss(t.id)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              onDismiss(t.id);
+            }
+          }}
+          role="button"
+          tabIndex={0}
+          aria-label={`Notification: ${t.text}. Click or press Enter to dismiss.`}
         >
           <span>{t.text}</span>
         </div>

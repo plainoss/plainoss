@@ -46,6 +46,11 @@ export class WebXREngine {
   private textTexture!: WebGLTexture;
   private lastRenderedText: string = "";
 
+  // Geometry Caches for WebXR 3D rendering
+  private unitSphereCache: Map<number, Float32Array> = new Map();
+  private cachedTorusVerts: Float32Array | null = null;
+  private cachedReticleDotVerts: Float32Array | null = null;
+
   // Measurement State
   public points: Point3D[] = [];
   public reticlePosition: Point3D | null = null;
@@ -653,22 +658,14 @@ export class WebXREngine {
         gl.uniform4f(uColor, 0.22, 0.74, 0.97, 0.95);
       }
 
-      // Elegant clean circular reticle ring ($6\text{cm}$ radius)
-      const torusVerts = this.createTorusMesh(0.06, 0.0035, 28, 8);
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        new Float32Array(torusVerts),
-        gl.DYNAMIC_DRAW,
-      );
+      // Elegant clean circular reticle ring ($6\text{cm}$ radius - cached mesh)
+      const torusVerts = this.getReticleTorusVerts();
+      gl.bufferData(gl.ARRAY_BUFFER, torusVerts, gl.DYNAMIC_DRAW);
       gl.drawArrays(gl.TRIANGLES, 0, torusVerts.length / 3);
 
-      // Clean center targeting dot ($6\text{mm}$)
-      const dotVerts = this.createSphereMesh({ x: 0, y: 0, z: 0 }, 0.006, 8);
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        new Float32Array(dotVerts),
-        gl.DYNAMIC_DRAW,
-      );
+      // Clean center targeting dot ($6\text{mm}$ - cached mesh)
+      const dotVerts = this.getReticleDotVerts();
+      gl.bufferData(gl.ARRAY_BUFFER, dotVerts, gl.DYNAMIC_DRAW);
       gl.drawArrays(gl.TRIANGLES, 0, dotVerts.length / 3);
 
       gl.uniformMatrix4fv(uModel, false, identity);
@@ -747,29 +744,17 @@ export class WebXREngine {
       if (isDragged) {
         gl.uniform4f(uColor, 0.13, 0.77, 0.36, 1.0); // Bright Green when dragging
         const verts = this.createSphereMesh(p, 0.024, 12);
-        gl.bufferData(
-          gl.ARRAY_BUFFER,
-          new Float32Array(verts),
-          gl.DYNAMIC_DRAW,
-        );
+        gl.bufferData(gl.ARRAY_BUFFER, verts, gl.DYNAMIC_DRAW);
         gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
       } else if (isHovered) {
         gl.uniform4f(uColor, 0.98, 0.75, 0.18, 1.0); // Large Golden Pulsing Handle
         const verts = this.createSphereMesh(p, 0.022, 12);
-        gl.bufferData(
-          gl.ARRAY_BUFFER,
-          new Float32Array(verts),
-          gl.DYNAMIC_DRAW,
-        );
+        gl.bufferData(gl.ARRAY_BUFFER, verts, gl.DYNAMIC_DRAW);
         gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
       } else {
         gl.uniform4f(uColor, 0.98, 0.75, 0.18, 0.9); // Normal Gold Anchor Sphere
         const verts = this.createSphereMesh(p, 0.016, 10);
-        gl.bufferData(
-          gl.ARRAY_BUFFER,
-          new Float32Array(verts),
-          gl.DYNAMIC_DRAW,
-        );
+        gl.bufferData(gl.ARRAY_BUFFER, verts, gl.DYNAMIC_DRAW);
         gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
       }
     }
@@ -876,11 +861,60 @@ export class WebXREngine {
     return verts;
   }
 
+  private getReticleTorusVerts(): Float32Array {
+    if (!this.cachedTorusVerts) {
+      this.cachedTorusVerts = new Float32Array(
+        this.createTorusMeshRaw(0.06, 0.0035, 28, 8),
+      );
+    }
+    return this.cachedTorusVerts;
+  }
+
+  private getReticleDotVerts(): Float32Array {
+    if (!this.cachedReticleDotVerts) {
+      this.cachedReticleDotVerts = this.createSphereMeshRaw(
+        { x: 0, y: 0, z: 0 },
+        0.006,
+        8,
+      );
+    }
+    return this.cachedReticleDotVerts;
+  }
+
+  private getUnitSphere(segments: number): Float32Array {
+    let cached = this.unitSphereCache.get(segments);
+    if (!cached) {
+      cached = this.createSphereMeshRaw({ x: 0, y: 0, z: 0 }, 1.0, segments);
+      this.unitSphereCache.set(segments, cached);
+    }
+    return cached;
+  }
+
+  /**
+   * Fast sphere mesh generation using precomputed unit sphere vertices.
+   * Avoids thousands of Math.sin/Math.cos trig calls and array allocations per frame.
+   */
   private createSphereMesh(
     center: Point3D,
     radius: number,
     segments: number = 8,
-  ): number[] {
+  ): Float32Array {
+    const unitVerts = this.getUnitSphere(segments);
+    const len = unitVerts.length;
+    const verts = new Float32Array(len);
+    for (let i = 0; i < len; i += 3) {
+      verts[i] = center.x + unitVerts[i]! * radius;
+      verts[i + 1] = center.y + unitVerts[i + 1]! * radius;
+      verts[i + 2] = center.z + unitVerts[i + 2]! * radius;
+    }
+    return verts;
+  }
+
+  private createSphereMeshRaw(
+    center: Point3D,
+    radius: number,
+    segments: number = 8,
+  ): Float32Array {
     const verts: number[] = [];
     for (let lat = 0; lat < segments; lat++) {
       const theta1 = (lat / segments) * Math.PI;
@@ -899,7 +933,7 @@ export class WebXREngine {
         verts.push(p2.x, p2.y, p2.z, p3.x, p3.y, p3.z, p4.x, p4.y, p4.z);
       }
     }
-    return verts;
+    return new Float32Array(verts);
   }
 
   private spherePoint(
@@ -915,7 +949,7 @@ export class WebXREngine {
     };
   }
 
-  private createTorusMesh(
+  private createTorusMeshRaw(
     radius: number,
     tubeRadius: number,
     radialSegments: number = 28,

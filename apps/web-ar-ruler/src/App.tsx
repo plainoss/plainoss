@@ -254,6 +254,12 @@ export function App() {
         <div
           className="fullscreen-tap-launcher"
           onClick={handleStartAR}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              handleStartAR();
+            }
+          }}
           role="button"
           tabIndex={0}
         >

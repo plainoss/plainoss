@@ -256,6 +256,13 @@ export function App() {
           onClick={handleStartAR}
           role="button"
           tabIndex={0}
+          aria-label="Start WebXR AR Mode"
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              handleStartAR();
+            }
+          }}
         >
           <div className="tap-launcher-content">
             <div className="pulsing-ar-badge">
@@ -323,6 +330,7 @@ export function App() {
               className={`btn-ar-circle-icon btn-ar-clear ${points.length > 0 ? "active" : ""}`}
               onClick={handleReset}
               onPointerDown={handleUIControlInteraction}
+              disabled={points.length === 0}
               title="Clear Measurement"
               aria-label="Clear Measurement"
             >

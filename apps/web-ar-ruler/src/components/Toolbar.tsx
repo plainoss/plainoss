@@ -35,6 +35,14 @@ const MODES: {
 ];
 
 const UNITS: DistanceUnit[] = ["m", "cm", "mm", "in", "ft", "yd"];
+const UNIT_LABELS: Record<DistanceUnit, string> = {
+  m: "Meters",
+  cm: "Centimeters",
+  mm: "Millimeters",
+  in: "Inches",
+  ft: "Feet",
+  yd: "Yards",
+};
 
 export const Toolbar: React.FC<ToolbarProps> = ({
   mode,
@@ -93,6 +101,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({
             key={u}
             role="radio"
             aria-checked={unit === u}
+            aria-label={UNIT_LABELS[u]}
+            title={UNIT_LABELS[u]}
             className={`btn-segment btn-unit ${unit === u ? "active" : ""}`}
             onClick={() => onSelectUnit(u)}
           >

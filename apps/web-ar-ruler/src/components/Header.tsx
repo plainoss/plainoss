@@ -51,6 +51,9 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             className={`btn btn-ar ${isARActive ? "btn-ar-active" : ""}`}
             onClick={onToggleAR}
+            aria-label={
+              isARActive ? "Exit WebXR AR" : "Enter WebXR Immersive AR Mode"
+            }
             title={
               isARActive ? "Exit WebXR AR" : "Enter WebXR Immersive AR Mode"
             }

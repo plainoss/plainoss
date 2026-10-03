@@ -114,6 +114,16 @@ export class Renderer3D {
   public theme: RenderTheme = DARK_THEME;
   public isARMode: boolean = false;
 
+  // Cached camera trigonometric projections and canvas metrics to avoid redundant DOM queries & math
+  private cachedYaw: number = NaN;
+  private cachedPitch: number = NaN;
+  private cosY: number = 0;
+  private sinY: number = 0;
+  private cosP: number = 0;
+  private sinP: number = 0;
+  private cachedWidth: number = 0;
+  private cachedHeight: number = 0;
+
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     const context = canvas.getContext("2d");
@@ -126,10 +136,25 @@ export class Renderer3D {
   public resize(): void {
     const dpr = window.devicePixelRatio || 1;
     const rect = this.canvas.getBoundingClientRect();
+    this.cachedWidth = rect.width;
+    this.cachedHeight = rect.height;
     this.canvas.width = Math.floor(rect.width * dpr);
     this.canvas.height = Math.floor(rect.height * dpr);
     this.ctx.scale(dpr, dpr);
     this.fov = Math.max(rect.width, rect.height) * 0.9;
+  }
+
+  private updateCameraCache(): void {
+    if (this.camera.yaw !== this.cachedYaw) {
+      this.cachedYaw = this.camera.yaw;
+      this.cosY = Math.cos(this.camera.yaw);
+      this.sinY = Math.sin(this.camera.yaw);
+    }
+    if (this.camera.pitch !== this.cachedPitch) {
+      this.cachedPitch = this.camera.pitch;
+      this.cosP = Math.cos(this.camera.pitch);
+      this.sinP = Math.sin(this.camera.pitch);
+    }
   }
 
   /**
@@ -137,9 +162,15 @@ export class Renderer3D {
    * Returns null if behind the camera near plane.
    */
   public project(p: Point3D): { x: number; y: number; depth: number } | null {
-    const rect = this.canvas.getBoundingClientRect();
-    const width = rect.width;
-    const height = rect.height;
+    if (this.cachedWidth === 0) {
+      const rect = this.canvas.getBoundingClientRect();
+      this.cachedWidth = rect.width;
+      this.cachedHeight = rect.height;
+    }
+    const width = this.cachedWidth;
+    const height = this.cachedHeight;
+
+    this.updateCameraCache();
 
     // 1. Target relative
     const rx = p.x - this.camera.target.x;
@@ -147,16 +178,12 @@ export class Renderer3D {
     const rz = p.z - this.camera.target.z;
 
     // 2. Yaw rotation (around Y axis)
-    const cosY = Math.cos(this.camera.yaw);
-    const sinY = Math.sin(this.camera.yaw);
-    const x1 = rx * cosY - rz * sinY;
-    const z1 = rx * sinY + rz * cosY;
+    const x1 = rx * this.cosY - rz * this.sinY;
+    const z1 = rx * this.sinY + rz * this.cosY;
 
     // 3. Pitch rotation (around X axis)
-    const cosP = Math.cos(this.camera.pitch);
-    const sinP = Math.sin(this.camera.pitch);
-    const y2 = ry * cosP - z1 * sinP;
-    const z2 = ry * sinP + z1 * cosP;
+    const y2 = ry * this.cosP - z1 * this.sinP;
+    const z2 = ry * this.sinP + z1 * this.cosP;
 
     // 4. Translate along camera distance
     const camZ = z2 + this.camera.distance;

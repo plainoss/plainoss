@@ -40,6 +40,13 @@ export class WebXREngine {
   private quadBuffer!: WebGLBuffer;
   private pointCloudBuffer!: WebGLBuffer;
 
+  // Cached Static 3D Geometry Buffers (Performance Optimization)
+  private cachedTorusData!: Float32Array;
+  private cachedReticleDotData!: Float32Array;
+  private cachedUnitSphereData!: Float32Array;
+  private handleMatrix: Float32Array = new Float32Array(16);
+  private roomGridBufferData: Float32Array = new Float32Array(1024);
+
   // Text Texture for 3D In-AR Measurement Label
   private textCanvas: HTMLCanvasElement;
   private textCtx: CanvasRenderingContext2D;
@@ -185,6 +192,40 @@ export class WebXREngine {
 
     this.pointCloudProgram = this.createProgram(vsPointCloud, fsPointCloud);
     this.pointCloudBuffer = gl.createBuffer()!;
+
+    // Pre-compute static 3D geometry buffers once to avoid per-frame allocations in render loop
+    this.cachedTorusData = new Float32Array(
+      this.createTorusMesh(0.06, 0.0035, 28, 8),
+    );
+    this.cachedReticleDotData = new Float32Array(
+      this.createSphereMesh({ x: 0, y: 0, z: 0 }, 0.006, 8),
+    );
+    this.cachedUnitSphereData = new Float32Array(
+      this.createSphereMesh({ x: 0, y: 0, z: 0 }, 1.0, 10),
+    );
+  }
+
+  /**
+   * Sets model matrix for rendering unit sphere at position with uniform scale.
+   */
+  private setSphereModelMatrix(center: Point3D, scale: number): void {
+    const m = this.handleMatrix;
+    m[0] = scale;
+    m[1] = 0;
+    m[2] = 0;
+    m[3] = 0;
+    m[4] = 0;
+    m[5] = scale;
+    m[6] = 0;
+    m[7] = 0;
+    m[8] = 0;
+    m[9] = 0;
+    m[10] = scale;
+    m[11] = 0;
+    m[12] = center.x;
+    m[13] = center.y;
+    m[14] = center.z;
+    m[15] = 1;
   }
 
   /**
@@ -597,11 +638,14 @@ export class WebXREngine {
       gl.uniformMatrix4fv(uView, false, viewMatrix);
 
       gl.bindBuffer(gl.ARRAY_BUFFER, this.pointCloudBuffer);
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        new Float32Array(roomGridDots),
-        gl.DYNAMIC_DRAW,
-      );
+      if (this.roomGridBufferData.length < roomGridDots.length) {
+        this.roomGridBufferData = new Float32Array(
+          Math.max(roomGridDots.length, this.roomGridBufferData.length * 2),
+        );
+      }
+      this.roomGridBufferData.set(roomGridDots);
+      const gridView = this.roomGridBufferData.subarray(0, roomGridDots.length);
+      gl.bufferData(gl.ARRAY_BUFFER, gridView, gl.DYNAMIC_DRAW);
 
       const posAttr = gl.getAttribLocation(this.pointCloudProgram, "aPosition");
       const alphaAttr = gl.getAttribLocation(this.pointCloudProgram, "aAlpha");
@@ -653,23 +697,17 @@ export class WebXREngine {
         gl.uniform4f(uColor, 0.22, 0.74, 0.97, 0.95);
       }
 
-      // Elegant clean circular reticle ring ($6\text{cm}$ radius)
-      const torusVerts = this.createTorusMesh(0.06, 0.0035, 28, 8);
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        new Float32Array(torusVerts),
-        gl.DYNAMIC_DRAW,
-      );
-      gl.drawArrays(gl.TRIANGLES, 0, torusVerts.length / 3);
+      // Elegant clean circular reticle ring (6cm radius) - uses pre-cached geometry
+      gl.bufferData(gl.ARRAY_BUFFER, this.cachedTorusData, gl.DYNAMIC_DRAW);
+      gl.drawArrays(gl.TRIANGLES, 0, this.cachedTorusData.length / 3);
 
-      // Clean center targeting dot ($6\text{mm}$)
-      const dotVerts = this.createSphereMesh({ x: 0, y: 0, z: 0 }, 0.006, 8);
+      // Clean center targeting dot (6mm) - uses pre-cached geometry
       gl.bufferData(
         gl.ARRAY_BUFFER,
-        new Float32Array(dotVerts),
+        this.cachedReticleDotData,
         gl.DYNAMIC_DRAW,
       );
-      gl.drawArrays(gl.TRIANGLES, 0, dotVerts.length / 3);
+      gl.drawArrays(gl.TRIANGLES, 0, this.cachedReticleDotData.length / 3);
 
       gl.uniformMatrix4fv(uModel, false, identity);
     }
@@ -736,42 +774,39 @@ export class WebXREngine {
       };
     }
 
-    // 2d. Render 3D Handles / Anchor Spheres
-    for (let i = 0; i < this.points.length; i++) {
-      const p = this.points[i];
-      if (!p) continue;
+    // 2d. Render 3D Handles / Anchor Spheres (using pre-cached unit sphere & model matrix transform)
+    if (this.points.length > 0) {
+      gl.bufferData(
+        gl.ARRAY_BUFFER,
+        this.cachedUnitSphereData,
+        gl.DYNAMIC_DRAW,
+      );
+      const unitSphereVertCount = this.cachedUnitSphereData.length / 3;
 
-      const isDragged = this.draggedPointIndex === i;
-      const isHovered = this.hoveredHandleIndex === i;
+      for (let i = 0; i < this.points.length; i++) {
+        const p = this.points[i];
+        if (!p) continue;
 
-      if (isDragged) {
-        gl.uniform4f(uColor, 0.13, 0.77, 0.36, 1.0); // Bright Green when dragging
-        const verts = this.createSphereMesh(p, 0.024, 12);
-        gl.bufferData(
-          gl.ARRAY_BUFFER,
-          new Float32Array(verts),
-          gl.DYNAMIC_DRAW,
-        );
-        gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
-      } else if (isHovered) {
-        gl.uniform4f(uColor, 0.98, 0.75, 0.18, 1.0); // Large Golden Pulsing Handle
-        const verts = this.createSphereMesh(p, 0.022, 12);
-        gl.bufferData(
-          gl.ARRAY_BUFFER,
-          new Float32Array(verts),
-          gl.DYNAMIC_DRAW,
-        );
-        gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
-      } else {
-        gl.uniform4f(uColor, 0.98, 0.75, 0.18, 0.9); // Normal Gold Anchor Sphere
-        const verts = this.createSphereMesh(p, 0.016, 10);
-        gl.bufferData(
-          gl.ARRAY_BUFFER,
-          new Float32Array(verts),
-          gl.DYNAMIC_DRAW,
-        );
-        gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
+        const isDragged = this.draggedPointIndex === i;
+        const isHovered = this.hoveredHandleIndex === i;
+
+        let scale = 0.016;
+        if (isDragged) {
+          gl.uniform4f(uColor, 0.13, 0.77, 0.36, 1.0); // Bright Green when dragging
+          scale = 0.024;
+        } else if (isHovered) {
+          gl.uniform4f(uColor, 0.98, 0.75, 0.18, 1.0); // Large Golden Pulsing Handle
+          scale = 0.022;
+        } else {
+          gl.uniform4f(uColor, 0.98, 0.75, 0.18, 0.9); // Normal Gold Anchor Sphere
+          scale = 0.016;
+        }
+
+        this.setSphereModelMatrix(p, scale);
+        gl.uniformMatrix4fv(uModel, false, this.handleMatrix);
+        gl.drawArrays(gl.TRIANGLES, 0, unitSphereVertCount);
       }
+      gl.uniformMatrix4fv(uModel, false, identity);
     }
 
     // ==========================================

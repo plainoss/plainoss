@@ -1,4 +1,5 @@
 import React from "react";
+import { CheckCircle2, AlertTriangle, Info, X } from "lucide-react";
 
 export interface ToastMessage {
   id: string;
@@ -21,15 +22,35 @@ export const ToastContainer: React.FC<ToastProps> = ({ toasts, onDismiss }) => {
       aria-label="Notifications"
       aria-live="polite"
     >
-      {toasts.map((t) => (
-        <div
-          key={t.id}
-          className={`toast toast-${t.type || "info"}`}
-          onClick={() => onDismiss(t.id)}
-        >
-          <span>{t.text}</span>
-        </div>
-      ))}
+      {toasts.map((t) => {
+        const type = t.type || "info";
+
+        let Icon = Info;
+        if (type === "success") {
+          Icon = CheckCircle2;
+        } else if (type === "warning") {
+          Icon = AlertTriangle;
+        }
+
+        return (
+          <div
+            key={t.id}
+            className={`toast toast-${type}`}
+            role={type === "warning" ? "alert" : "status"}
+          >
+            <Icon size={16} aria-hidden="true" className="toast-icon" />
+            <span className="toast-message">{t.text}</span>
+            <button
+              type="button"
+              className="toast-dismiss"
+              onClick={() => onDismiss(t.id)}
+              aria-label="Dismiss notification"
+            >
+              <X size={14} aria-hidden="true" />
+            </button>
+          </div>
+        );
+      })}
     </div>
   );
 };

@@ -1,4 +1,5 @@
 import React from "react";
+import { X } from "lucide-react";
 
 export interface ToastMessage {
   id: string;
@@ -25,9 +26,17 @@ export const ToastContainer: React.FC<ToastProps> = ({ toasts, onDismiss }) => {
         <div
           key={t.id}
           className={`toast toast-${t.type || "info"}`}
-          onClick={() => onDismiss(t.id)}
+          role="status"
         >
           <span>{t.text}</span>
+          <button
+            type="button"
+            className="toast-close-btn"
+            onClick={() => onDismiss(t.id)}
+            aria-label="Dismiss notification"
+          >
+            <X size={14} />
+          </button>
         </div>
       ))}
     </div>

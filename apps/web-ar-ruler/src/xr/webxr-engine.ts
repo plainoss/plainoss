@@ -46,6 +46,11 @@ export class WebXREngine {
   private textTexture!: WebGLTexture;
   private lastRenderedText: string = "";
 
+  // Cached Static Meshes for WebXR Render Loop
+  private cachedTorusMesh!: Float32Array;
+  private cachedReticleDotMesh!: Float32Array;
+  private sphereOriginCache: Map<string, Float32Array> = new Map();
+
   // Measurement State
   public points: Point3D[] = [];
   public reticlePosition: Point3D | null = null;
@@ -185,6 +190,47 @@ export class WebXREngine {
 
     this.pointCloudProgram = this.createProgram(vsPointCloud, fsPointCloud);
     this.pointCloudBuffer = gl.createBuffer()!;
+
+    // Precompute static meshes to avoid redundant trig calls & GC allocations in render loop
+    this.cachedTorusMesh = new Float32Array(
+      this.createTorusMesh(0.06, 0.0035, 28, 8),
+    );
+    this.cachedReticleDotMesh = new Float32Array(
+      this.createSphereMesh({ x: 0, y: 0, z: 0 }, 0.006, 8),
+    );
+  }
+
+  /**
+   * Returns a cached sphere mesh centered at origin for a given radius and segment count.
+   */
+  private getSphereOriginMesh(radius: number, segments: number): Float32Array {
+    const key = `${radius}_${segments}`;
+    let mesh = this.sphereOriginCache.get(key);
+    if (!mesh) {
+      mesh = new Float32Array(
+        this.createSphereMesh({ x: 0, y: 0, z: 0 }, radius, segments),
+      );
+      this.sphereOriginCache.set(key, mesh);
+    }
+    return mesh;
+  }
+
+  /**
+   * Generates sphere vertices centered at point p using offset addition from cached origin vertices.
+   */
+  private getSphereMeshAt(
+    p: Point3D,
+    radius: number,
+    segments: number,
+  ): Float32Array {
+    const originMesh = this.getSphereOriginMesh(radius, segments);
+    const out = new Float32Array(originMesh.length);
+    for (let i = 0; i < originMesh.length; i += 3) {
+      out[i] = originMesh[i]! + p.x;
+      out[i + 1] = originMesh[i + 1]! + p.y;
+      out[i + 2] = originMesh[i + 2]! + p.z;
+    }
+    return out;
   }
 
   /**
@@ -653,22 +699,14 @@ export class WebXREngine {
         gl.uniform4f(uColor, 0.22, 0.74, 0.97, 0.95);
       }
 
-      // Elegant clean circular reticle ring ($6\text{cm}$ radius)
-      const torusVerts = this.createTorusMesh(0.06, 0.0035, 28, 8);
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        new Float32Array(torusVerts),
-        gl.DYNAMIC_DRAW,
-      );
+      // Elegant clean circular reticle ring ($6\text{cm}$ radius - cached mesh)
+      const torusVerts = this.cachedTorusMesh;
+      gl.bufferData(gl.ARRAY_BUFFER, torusVerts, gl.DYNAMIC_DRAW);
       gl.drawArrays(gl.TRIANGLES, 0, torusVerts.length / 3);
 
-      // Clean center targeting dot ($6\text{mm}$)
-      const dotVerts = this.createSphereMesh({ x: 0, y: 0, z: 0 }, 0.006, 8);
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        new Float32Array(dotVerts),
-        gl.DYNAMIC_DRAW,
-      );
+      // Clean center targeting dot ($6\text{mm}$ - cached mesh)
+      const dotVerts = this.cachedReticleDotMesh;
+      gl.bufferData(gl.ARRAY_BUFFER, dotVerts, gl.DYNAMIC_DRAW);
       gl.drawArrays(gl.TRIANGLES, 0, dotVerts.length / 3);
 
       gl.uniformMatrix4fv(uModel, false, identity);
@@ -746,30 +784,18 @@ export class WebXREngine {
 
       if (isDragged) {
         gl.uniform4f(uColor, 0.13, 0.77, 0.36, 1.0); // Bright Green when dragging
-        const verts = this.createSphereMesh(p, 0.024, 12);
-        gl.bufferData(
-          gl.ARRAY_BUFFER,
-          new Float32Array(verts),
-          gl.DYNAMIC_DRAW,
-        );
+        const verts = this.getSphereMeshAt(p, 0.024, 12);
+        gl.bufferData(gl.ARRAY_BUFFER, verts, gl.DYNAMIC_DRAW);
         gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
       } else if (isHovered) {
         gl.uniform4f(uColor, 0.98, 0.75, 0.18, 1.0); // Large Golden Pulsing Handle
-        const verts = this.createSphereMesh(p, 0.022, 12);
-        gl.bufferData(
-          gl.ARRAY_BUFFER,
-          new Float32Array(verts),
-          gl.DYNAMIC_DRAW,
-        );
+        const verts = this.getSphereMeshAt(p, 0.022, 12);
+        gl.bufferData(gl.ARRAY_BUFFER, verts, gl.DYNAMIC_DRAW);
         gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
       } else {
         gl.uniform4f(uColor, 0.98, 0.75, 0.18, 0.9); // Normal Gold Anchor Sphere
-        const verts = this.createSphereMesh(p, 0.016, 10);
-        gl.bufferData(
-          gl.ARRAY_BUFFER,
-          new Float32Array(verts),
-          gl.DYNAMIC_DRAW,
-        );
+        const verts = this.getSphereMeshAt(p, 0.016, 10);
+        gl.bufferData(gl.ARRAY_BUFFER, verts, gl.DYNAMIC_DRAW);
         gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
       }
     }

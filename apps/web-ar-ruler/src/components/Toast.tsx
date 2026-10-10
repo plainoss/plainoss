@@ -24,8 +24,17 @@ export const ToastContainer: React.FC<ToastProps> = ({ toasts, onDismiss }) => {
       {toasts.map((t) => (
         <div
           key={t.id}
+          role="button"
+          tabIndex={0}
+          aria-label={`Dismiss notification: ${t.text}`}
           className={`toast toast-${t.type || "info"}`}
           onClick={() => onDismiss(t.id)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              onDismiss(t.id);
+            }
+          }}
         >
           <span>{t.text}</span>
         </div>

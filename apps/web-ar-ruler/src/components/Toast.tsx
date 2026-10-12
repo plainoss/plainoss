@@ -24,24 +24,12 @@ export const ToastContainer: React.FC<ToastProps> = ({ toasts, onDismiss }) => {
     >
       {toasts.map((t) => {
         const type = t.type || "info";
-        const handleKeyDown = (e: React.KeyboardEvent) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            onDismiss(t.id);
-          }
-        };
-
         let Icon = Info;
         if (type === "success") Icon = CheckCircle2;
         if (type === "warning") Icon = AlertTriangle;
 
         return (
-          <div
-            key={t.id}
-            role="status"
-            className={`toast toast-${type}`}
-            onClick={() => onDismiss(t.id)}
-          >
+          <div key={t.id} role="status" className={`toast toast-${type}`}>
             <span className="toast-icon" aria-hidden="true">
               <Icon size={16} />
             </span>
@@ -49,11 +37,7 @@ export const ToastContainer: React.FC<ToastProps> = ({ toasts, onDismiss }) => {
             <button
               type="button"
               className="toast-dismiss-btn"
-              onClick={(e) => {
-                e.stopPropagation();
-                onDismiss(t.id);
-              }}
-              onKeyDown={handleKeyDown}
+              onClick={() => onDismiss(t.id)}
               aria-label="Dismiss notification"
               title="Dismiss notification"
             >

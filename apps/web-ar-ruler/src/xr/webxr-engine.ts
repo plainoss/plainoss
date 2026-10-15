@@ -40,6 +40,18 @@ export class WebXREngine {
   private quadBuffer!: WebGLBuffer;
   private pointCloudBuffer!: WebGLBuffer;
 
+  private static readonly IDENTITY_MATRIX = new Float32Array([
+    1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1,
+  ]);
+  private transformMatrix: Float32Array = new Float32Array(16);
+
+  // Precalculated static 3D meshes (avoids per-frame trigonometric math & heap allocations)
+  private reticleTorusMesh!: Float32Array;
+  private reticleDotMesh!: Float32Array;
+  private sphereDraggedMesh!: Float32Array;
+  private sphereHoveredMesh!: Float32Array;
+  private sphereNormalMesh!: Float32Array;
+
   // Text Texture for 3D In-AR Measurement Label
   private textCanvas: HTMLCanvasElement;
   private textCtx: CanvasRenderingContext2D;
@@ -185,6 +197,47 @@ export class WebXREngine {
 
     this.pointCloudProgram = this.createProgram(vsPointCloud, fsPointCloud);
     this.pointCloudBuffer = gl.createBuffer()!;
+
+    // Precalculate static 3D mesh buffers at origin once to avoid per-frame CPU allocation & trigonometric math
+    this.reticleTorusMesh = new Float32Array(
+      this.createTorusMesh(0.06, 0.0035, 28, 8),
+    );
+    this.reticleDotMesh = new Float32Array(
+      this.createSphereMesh({ x: 0, y: 0, z: 0 }, 0.006, 8),
+    );
+    this.sphereDraggedMesh = new Float32Array(
+      this.createSphereMesh({ x: 0, y: 0, z: 0 }, 0.024, 12),
+    );
+    this.sphereHoveredMesh = new Float32Array(
+      this.createSphereMesh({ x: 0, y: 0, z: 0 }, 0.022, 12),
+    );
+    this.sphereNormalMesh = new Float32Array(
+      this.createSphereMesh({ x: 0, y: 0, z: 0 }, 0.016, 10),
+    );
+  }
+
+  private setTranslationMatrix(
+    out: Float32Array,
+    x: number,
+    y: number,
+    z: number,
+  ): void {
+    out[0] = 1;
+    out[1] = 0;
+    out[2] = 0;
+    out[3] = 0;
+    out[4] = 0;
+    out[5] = 1;
+    out[6] = 0;
+    out[7] = 0;
+    out[8] = 0;
+    out[9] = 0;
+    out[10] = 1;
+    out[11] = 0;
+    out[12] = x;
+    out[13] = y;
+    out[14] = z;
+    out[15] = 1;
   }
 
   /**
@@ -573,10 +626,6 @@ export class WebXREngine {
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
-    const identity = new Float32Array([
-      1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1,
-    ]);
-
     // ==========================================
     // 1. RENDER SCANNING LIGHT-DOT SURFACE GRID (Active ONLY while scanning for surfaces)
     // ==========================================
@@ -633,7 +682,7 @@ export class WebXREngine {
 
     gl.uniformMatrix4fv(uProj, false, projectionMatrix);
     gl.uniformMatrix4fv(uView, false, viewMatrix);
-    gl.uniformMatrix4fv(uModel, false, identity);
+    gl.uniformMatrix4fv(uModel, false, WebXREngine.IDENTITY_MATRIX);
 
     const posAttr = gl.getAttribLocation(this.geometryProgram, "aPosition");
     gl.enableVertexAttribArray(posAttr);
@@ -653,25 +702,15 @@ export class WebXREngine {
         gl.uniform4f(uColor, 0.22, 0.74, 0.97, 0.95);
       }
 
-      // Elegant clean circular reticle ring ($6\text{cm}$ radius)
-      const torusVerts = this.createTorusMesh(0.06, 0.0035, 28, 8);
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        new Float32Array(torusVerts),
-        gl.DYNAMIC_DRAW,
-      );
-      gl.drawArrays(gl.TRIANGLES, 0, torusVerts.length / 3);
+      // Elegant clean circular reticle ring (6cm radius)
+      gl.bufferData(gl.ARRAY_BUFFER, this.reticleTorusMesh, gl.STATIC_DRAW);
+      gl.drawArrays(gl.TRIANGLES, 0, this.reticleTorusMesh.length / 3);
 
-      // Clean center targeting dot ($6\text{mm}$)
-      const dotVerts = this.createSphereMesh({ x: 0, y: 0, z: 0 }, 0.006, 8);
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        new Float32Array(dotVerts),
-        gl.DYNAMIC_DRAW,
-      );
-      gl.drawArrays(gl.TRIANGLES, 0, dotVerts.length / 3);
+      // Clean center targeting dot (6mm)
+      gl.bufferData(gl.ARRAY_BUFFER, this.reticleDotMesh, gl.STATIC_DRAW);
+      gl.drawArrays(gl.TRIANGLES, 0, this.reticleDotMesh.length / 3);
 
-      gl.uniformMatrix4fv(uModel, false, identity);
+      gl.uniformMatrix4fv(uModel, false, WebXREngine.IDENTITY_MATRIX);
     }
 
     let measurementMidpoint: Point3D | null = null;
@@ -744,34 +783,25 @@ export class WebXREngine {
       const isDragged = this.draggedPointIndex === i;
       const isHovered = this.hoveredHandleIndex === i;
 
+      this.setTranslationMatrix(this.transformMatrix, p.x, p.y, p.z);
+      gl.uniformMatrix4fv(uModel, false, this.transformMatrix);
+
       if (isDragged) {
         gl.uniform4f(uColor, 0.13, 0.77, 0.36, 1.0); // Bright Green when dragging
-        const verts = this.createSphereMesh(p, 0.024, 12);
-        gl.bufferData(
-          gl.ARRAY_BUFFER,
-          new Float32Array(verts),
-          gl.DYNAMIC_DRAW,
-        );
-        gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
+        gl.bufferData(gl.ARRAY_BUFFER, this.sphereDraggedMesh, gl.STATIC_DRAW);
+        gl.drawArrays(gl.TRIANGLES, 0, this.sphereDraggedMesh.length / 3);
       } else if (isHovered) {
         gl.uniform4f(uColor, 0.98, 0.75, 0.18, 1.0); // Large Golden Pulsing Handle
-        const verts = this.createSphereMesh(p, 0.022, 12);
-        gl.bufferData(
-          gl.ARRAY_BUFFER,
-          new Float32Array(verts),
-          gl.DYNAMIC_DRAW,
-        );
-        gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
+        gl.bufferData(gl.ARRAY_BUFFER, this.sphereHoveredMesh, gl.STATIC_DRAW);
+        gl.drawArrays(gl.TRIANGLES, 0, this.sphereHoveredMesh.length / 3);
       } else {
         gl.uniform4f(uColor, 0.98, 0.75, 0.18, 0.9); // Normal Gold Anchor Sphere
-        const verts = this.createSphereMesh(p, 0.016, 10);
-        gl.bufferData(
-          gl.ARRAY_BUFFER,
-          new Float32Array(verts),
-          gl.DYNAMIC_DRAW,
-        );
-        gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
+        gl.bufferData(gl.ARRAY_BUFFER, this.sphereNormalMesh, gl.STATIC_DRAW);
+        gl.drawArrays(gl.TRIANGLES, 0, this.sphereNormalMesh.length / 3);
       }
+    }
+    if (this.points.length > 0) {
+      gl.uniformMatrix4fv(uModel, false, WebXREngine.IDENTITY_MATRIX);
     }
 
     // ==========================================
@@ -825,10 +855,10 @@ export class WebXREngine {
     p1: Point3D,
     p2: Point3D,
     radius: number,
-  ): number[] {
+  ): Float32Array {
     const dir = { x: p2.x - p1.x, y: p2.y - p1.y, z: p2.z - p1.z };
     const len = Math.hypot(dir.x, dir.y, dir.z);
-    if (len < 0.001) return [];
+    if (len < 0.001) return new Float32Array(0);
 
     const nd = { x: dir.x / len, y: dir.y / len, z: dir.z / len };
     let up = { x: 0, y: 1, z: 0 };
@@ -873,7 +903,7 @@ export class WebXREngine {
       verts.push(a2.x, a2.y, a2.z, b1.x, b1.y, b1.z, b2.x, b2.y, b2.z);
     }
 
-    return verts;
+    return new Float32Array(verts);
   }
 
   private createSphereMesh(

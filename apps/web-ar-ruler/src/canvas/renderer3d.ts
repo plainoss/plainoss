@@ -114,6 +114,14 @@ export class Renderer3D {
   public theme: RenderTheme = DARK_THEME;
   public isARMode: boolean = false;
 
+  // Viewport & Transform Caches (prevents DOM layout thrashing and redundant trig math)
+  private cachedWidth: number = 0;
+  private cachedHeight: number = 0;
+  private cachedCosY: number = 0;
+  private cachedSinY: number = 0;
+  private cachedCosP: number = 0;
+  private cachedSinP: number = 0;
+
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     const context = canvas.getContext("2d");
@@ -123,6 +131,20 @@ export class Renderer3D {
     this.ctx = context;
   }
 
+  /**
+   * Updates cached canvas viewport bounds and precomputes camera trigonometric factors.
+   * Prevents repeated getBoundingClientRect calls (DOM layout thrashing) and trig math in project().
+   */
+  public updateViewCache(): void {
+    const rect = this.canvas.getBoundingClientRect();
+    this.cachedWidth = rect.width || 1;
+    this.cachedHeight = rect.height || 1;
+    this.cachedCosY = Math.cos(this.camera.yaw);
+    this.cachedSinY = Math.sin(this.camera.yaw);
+    this.cachedCosP = Math.cos(this.camera.pitch);
+    this.cachedSinP = Math.sin(this.camera.pitch);
+  }
+
   public resize(): void {
     const dpr = window.devicePixelRatio || 1;
     const rect = this.canvas.getBoundingClientRect();
@@ -130,6 +152,7 @@ export class Renderer3D {
     this.canvas.height = Math.floor(rect.height * dpr);
     this.ctx.scale(dpr, dpr);
     this.fov = Math.max(rect.width, rect.height) * 0.9;
+    this.updateViewCache();
   }
 
   /**
@@ -137,26 +160,24 @@ export class Renderer3D {
    * Returns null if behind the camera near plane.
    */
   public project(p: Point3D): { x: number; y: number; depth: number } | null {
-    const rect = this.canvas.getBoundingClientRect();
-    const width = rect.width;
-    const height = rect.height;
+    if (this.cachedWidth === 0) {
+      this.updateViewCache();
+    }
+    const width = this.cachedWidth;
+    const height = this.cachedHeight;
 
     // 1. Target relative
     const rx = p.x - this.camera.target.x;
     const ry = p.y - this.camera.target.y;
     const rz = p.z - this.camera.target.z;
 
-    // 2. Yaw rotation (around Y axis)
-    const cosY = Math.cos(this.camera.yaw);
-    const sinY = Math.sin(this.camera.yaw);
-    const x1 = rx * cosY - rz * sinY;
-    const z1 = rx * sinY + rz * cosY;
+    // 2. Yaw rotation (around Y axis, using cached trig factors)
+    const x1 = rx * this.cachedCosY - rz * this.cachedSinY;
+    const z1 = rx * this.cachedSinY + rz * this.cachedCosY;
 
-    // 3. Pitch rotation (around X axis)
-    const cosP = Math.cos(this.camera.pitch);
-    const sinP = Math.sin(this.camera.pitch);
-    const y2 = ry * cosP - z1 * sinP;
-    const z2 = ry * sinP + z1 * cosP;
+    // 3. Pitch rotation (around X axis, using cached trig factors)
+    const y2 = ry * this.cachedCosP - z1 * this.cachedSinP;
+    const z2 = ry * this.cachedSinP + z1 * this.cachedCosP;
 
     // 4. Translate along camera distance
     const camZ = z2 + this.camera.distance;
@@ -180,9 +201,11 @@ export class Renderer3D {
     screenY: number,
     planeY: number = 0,
   ): Point3D | null {
-    const rect = this.canvas.getBoundingClientRect();
-    const width = rect.width;
-    const height = rect.height;
+    if (this.cachedWidth === 0) {
+      this.updateViewCache();
+    }
+    const width = this.cachedWidth;
+    const height = this.cachedHeight;
 
     const normX = (screenX - width / 2) / this.fov;
     const normY = -(screenY - height / 2) / this.fov;
@@ -239,9 +262,11 @@ export class Renderer3D {
     screenY: number,
     distanceMeters: number = 1.5,
   ): Point3D {
-    const rect = this.canvas.getBoundingClientRect();
-    const width = rect.width || 1;
-    const height = rect.height || 1;
+    if (this.cachedWidth === 0) {
+      this.updateViewCache();
+    }
+    const width = this.cachedWidth;
+    const height = this.cachedHeight;
 
     const normX = (screenX - width / 2) / this.fov;
     const normY = -(screenY - height / 2) / this.fov;
@@ -289,10 +314,10 @@ export class Renderer3D {
     unit: DistanceUnit,
     angleUnit: AngleUnit,
   ): void {
-    const rect = this.canvas.getBoundingClientRect();
+    this.updateViewCache();
     const ctx = this.ctx;
 
-    ctx.clearRect(0, 0, rect.width, rect.height);
+    ctx.clearRect(0, 0, this.cachedWidth, this.cachedHeight);
 
     // 1. Draw 3D Ground Grid (or spatial crosshairs in AR mode)
     this.renderGrid();

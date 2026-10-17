@@ -193,7 +193,7 @@ export default function App() {
       </View>
 
       {/* Mode Selector */}
-      <View style={styles.modeRow}>
+      <View style={styles.modeRow} accessibilityRole="radiogroup">
         {MODES.map((m) => (
           <TouchableOpacity
             key={m.id}
@@ -202,8 +202,14 @@ export default function App() {
               triggerHaptic();
               setMode(m.id);
             }}
+            accessibilityRole="radio"
+            accessibilityState={{ selected: mode === m.id }}
+            accessibilityLabel={`${m.label} Mode`}
+            accessibilityHint={`Switches measurement mode to ${m.label}`}
           >
-            <Text style={styles.modeIcon}>{m.icon}</Text>
+            <Text style={styles.modeIcon} aria-hidden={true}>
+              {m.icon}
+            </Text>
             <Text
               style={[
                 styles.modeLabel,
@@ -260,6 +266,9 @@ export default function App() {
                 Math.max(0.5, Number((d - 0.2).toFixed(1))),
               )
             }
+            accessibilityRole="button"
+            accessibilityLabel="Decrease targeting depth"
+            accessibilityHint="Decreases crosshair depth by 0.2 meters"
           >
             <Text style={styles.rangeBtnText}>-</Text>
           </TouchableOpacity>
@@ -271,6 +280,9 @@ export default function App() {
                 Math.min(10, Number((d + 0.2).toFixed(1))),
               )
             }
+            accessibilityRole="button"
+            accessibilityLabel="Increase targeting depth"
+            accessibilityHint="Increases crosshair depth by 0.2 meters"
           >
             <Text style={styles.rangeBtnText}>+</Text>
           </TouchableOpacity>
@@ -301,6 +313,7 @@ export default function App() {
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.unitsScroll}
+        accessibilityRole="radiogroup"
       >
         {UNITS.map((u) => (
           <TouchableOpacity
@@ -310,6 +323,10 @@ export default function App() {
               triggerHaptic();
               setUnit(u);
             }}
+            accessibilityRole="radio"
+            accessibilityState={{ selected: unit === u }}
+            accessibilityLabel={`Unit: ${u}`}
+            accessibilityHint={`Changes unit of measurement to ${u}`}
           >
             <Text
               style={[
@@ -329,6 +346,10 @@ export default function App() {
           style={[styles.actionBtn, styles.actionBtnSecondary]}
           onPress={handleUndo}
           disabled={points.length === 0}
+          accessibilityRole="button"
+          accessibilityState={{ disabled: points.length === 0 }}
+          accessibilityLabel="Undo last point"
+          accessibilityHint="Removes the last placed spatial measurement point"
         >
           <Text style={styles.actionBtnText}>↩️ Undo</Text>
         </TouchableOpacity>
@@ -338,9 +359,14 @@ export default function App() {
           style={styles.dropPointBtn}
           onPress={handleDropPoint}
           activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Place 3D point"
+          accessibilityHint="Places a new spatial point at the current reticle position"
         >
           <View style={styles.dropPointInner}>
-            <Text style={styles.dropPointText}>📍</Text>
+            <Text style={styles.dropPointText} aria-hidden={true}>
+              📍
+            </Text>
           </View>
         </TouchableOpacity>
 
@@ -350,6 +376,15 @@ export default function App() {
             isReadyToSave ? styles.actionBtnSave : styles.actionBtnSecondary,
           ]}
           onPress={isReadyToSave ? handleSave : handleClear}
+          accessibilityRole="button"
+          accessibilityLabel={
+            isReadyToSave ? "Save measurement" : "Clear all points"
+          }
+          accessibilityHint={
+            isReadyToSave
+              ? "Saves current measurement to history"
+              : "Clears all placed spatial points"
+          }
         >
           <Text style={styles.actionBtnText}>
             {isReadyToSave ? "💾 Save" : "🗑️ Clear"}
@@ -366,6 +401,8 @@ export default function App() {
               <TouchableOpacity
                 onPress={() => setShowHistory(false)}
                 style={styles.closeBtn}
+                accessibilityRole="button"
+                accessibilityLabel="Close saved measurements"
               >
                 <Text style={styles.closeBtnText}>✕</Text>
               </TouchableOpacity>

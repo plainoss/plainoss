@@ -1,0 +1,4 @@
+## 2025-05-18 - Zero-Allocation WebXR 3D Render Loop
+
+**Learning:** Re-generating 3D mesh arrays (`number[]`) and allocating new `Float32Array` instances inside a 60-120Hz WebXR `requestAnimationFrame` render loop creates severe garbage collection churn and frame drops in immersive AR browsers. Pre-computing static geometry into cached `Float32Array`s once at startup, applying GPU `uModelMatrix` transformations for handle shapes, and populating reusable pre-allocated `Float32Array` buffers for dynamic lines and point clouds completely eliminates per-frame heap allocations in the hot path.
+**Action:** In 3D Canvas / WebXR / WebGL render loops, never allocate arrays, objects, or TypedArrays per frame. Precompute static geometry into typed arrays and reuse fixed-size typed array buffers for dynamic geometry.

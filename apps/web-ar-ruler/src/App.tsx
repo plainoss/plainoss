@@ -175,6 +175,16 @@ export function App() {
     }
   }, [initEngine]);
 
+  const handleKeyDownARLauncher = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        handleStartAR();
+      }
+    },
+    [handleStartAR],
+  );
+
   // Initialize WebXR Engine & check support on mount
   useEffect(() => {
     WebXREngine.isSupported().then((supported) => {
@@ -254,8 +264,10 @@ export function App() {
         <div
           className="fullscreen-tap-launcher"
           onClick={handleStartAR}
+          onKeyDown={handleKeyDownARLauncher}
           role="button"
           tabIndex={0}
+          aria-label="Start AR Ruler - Tap anywhere or press Enter to begin"
         >
           <div className="tap-launcher-content">
             <div className="pulsing-ar-badge">

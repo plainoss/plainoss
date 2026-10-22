@@ -114,6 +114,16 @@ export class Renderer3D {
   public theme: RenderTheme = DARK_THEME;
   public isARMode: boolean = false;
 
+  // Performance caching: avoids DOM layout queries (getBoundingClientRect) and repeated camera trig math during 60fps projections
+  private viewportWidth: number = 0;
+  private viewportHeight: number = 0;
+  private cosY: number = 0;
+  private sinY: number = 0;
+  private cosP: number = 0;
+  private sinP: number = 0;
+  private lastYaw: number | null = null;
+  private lastPitch: number | null = null;
+
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     const context = canvas.getContext("2d");
@@ -121,42 +131,72 @@ export class Renderer3D {
       throw new Error("Canvas 2D context not supported");
     }
     this.ctx = context;
+    this.updateViewportCache();
+    this.updateCameraCache();
+  }
+
+  /**
+   * Caches canvas layout dimensions to eliminate DOM getBoundingClientRect queries in inner loops.
+   */
+  public updateViewportCache(): void {
+    const rect = this.canvas.getBoundingClientRect();
+    this.viewportWidth = rect.width;
+    this.viewportHeight = rect.height;
+  }
+
+  /**
+   * Precomputes camera orientation trigonometric factors for fast point projections.
+   * Lazily updates only when camera yaw or pitch changes.
+   */
+  public updateCameraCache(): void {
+    if (
+      this.lastYaw !== this.camera.yaw ||
+      this.lastPitch !== this.camera.pitch
+    ) {
+      this.lastYaw = this.camera.yaw;
+      this.lastPitch = this.camera.pitch;
+      this.cosY = Math.cos(this.camera.yaw);
+      this.sinY = Math.sin(this.camera.yaw);
+      this.cosP = Math.cos(this.camera.pitch);
+      this.sinP = Math.sin(this.camera.pitch);
+    }
   }
 
   public resize(): void {
     const dpr = window.devicePixelRatio || 1;
-    const rect = this.canvas.getBoundingClientRect();
-    this.canvas.width = Math.floor(rect.width * dpr);
-    this.canvas.height = Math.floor(rect.height * dpr);
+    this.updateViewportCache();
+    this.canvas.width = Math.floor(this.viewportWidth * dpr);
+    this.canvas.height = Math.floor(this.viewportHeight * dpr);
     this.ctx.scale(dpr, dpr);
-    this.fov = Math.max(rect.width, rect.height) * 0.9;
+    this.fov = Math.max(this.viewportWidth, this.viewportHeight) * 0.9;
   }
 
   /**
    * Projects a 3D world coordinate into 2D screen coordinate.
+   * Uses cached viewport dimensions and precomputed camera trig values for 60fps performance.
    * Returns null if behind the camera near plane.
    */
   public project(p: Point3D): { x: number; y: number; depth: number } | null {
-    const rect = this.canvas.getBoundingClientRect();
-    const width = rect.width;
-    const height = rect.height;
+    if (this.viewportWidth === 0 || this.viewportHeight === 0) {
+      this.updateViewportCache();
+    }
+    this.updateCameraCache();
+
+    const width = this.viewportWidth;
+    const height = this.viewportHeight;
 
     // 1. Target relative
     const rx = p.x - this.camera.target.x;
     const ry = p.y - this.camera.target.y;
     const rz = p.z - this.camera.target.z;
 
-    // 2. Yaw rotation (around Y axis)
-    const cosY = Math.cos(this.camera.yaw);
-    const sinY = Math.sin(this.camera.yaw);
-    const x1 = rx * cosY - rz * sinY;
-    const z1 = rx * sinY + rz * cosY;
+    // 2. Yaw rotation (around Y axis) using precomputed trig factors
+    const x1 = rx * this.cosY - rz * this.sinY;
+    const z1 = rx * this.sinY + rz * this.cosY;
 
-    // 3. Pitch rotation (around X axis)
-    const cosP = Math.cos(this.camera.pitch);
-    const sinP = Math.sin(this.camera.pitch);
-    const y2 = ry * cosP - z1 * sinP;
-    const z2 = ry * sinP + z1 * cosP;
+    // 3. Pitch rotation (around X axis) using precomputed trig factors
+    const y2 = ry * this.cosP - z1 * this.sinP;
+    const z2 = ry * this.sinP + z1 * this.cosP;
 
     // 4. Translate along camera distance
     const camZ = z2 + this.camera.distance;
@@ -180,9 +220,13 @@ export class Renderer3D {
     screenY: number,
     planeY: number = 0,
   ): Point3D | null {
-    const rect = this.canvas.getBoundingClientRect();
-    const width = rect.width;
-    const height = rect.height;
+    if (this.viewportWidth === 0 || this.viewportHeight === 0) {
+      this.updateViewportCache();
+    }
+    this.updateCameraCache();
+
+    const width = this.viewportWidth;
+    const height = this.viewportHeight;
 
     const normX = (screenX - width / 2) / this.fov;
     const normY = -(screenY - height / 2) / this.fov;
@@ -190,28 +234,36 @@ export class Renderer3D {
     // Ray in camera space
     const rCam = { x: normX, y: normY, z: 1 };
 
+    // Negative angles for inverse rotation: cos(-A) = cos(A), sin(-A) = -sin(A)
+    const cosP_neg = this.cosP;
+    const sinP_neg = -this.sinP;
+    const cosY_neg = this.cosY;
+    const sinY_neg = -this.sinY;
+
     // Un-pitch
-    const cosP = Math.cos(-this.camera.pitch);
-    const sinP = Math.sin(-this.camera.pitch);
-    const ry1 = rCam.y * cosP - rCam.z * sinP;
-    const rz1 = rCam.y * sinP + rCam.z * cosP;
+    const ry1 = rCam.y * cosP_neg - rCam.z * sinP_neg;
+    const rz1 = rCam.y * sinP_neg + rCam.z * cosP_neg;
 
     // Un-yaw
-    const cosY = Math.cos(-this.camera.yaw);
-    const sinY = Math.sin(-this.camera.yaw);
-    const rx2 = rCam.x * cosY - rz1 * sinY;
-    const rz2 = rCam.x * sinY + rz1 * cosY;
+    const rx2 = rCam.x * cosY_neg - rz1 * sinY_neg;
+    const rz2 = rCam.x * sinY_neg + rz1 * cosY_neg;
 
     // Camera origin in world space
     const camOriginRel = {
       x: 0,
-      y: -this.camera.distance * Math.sin(this.camera.pitch),
-      z: -this.camera.distance * Math.cos(this.camera.pitch),
+      y: -this.camera.distance * this.sinP,
+      z: -this.camera.distance * this.cosP,
     };
     const camOriginWorld = {
-      x: this.camera.target.x + (camOriginRel.x * cosY - camOriginRel.z * sinY),
-      y: this.camera.target.y + (camOriginRel.y * cosP + camOriginRel.z * sinP),
-      z: this.camera.target.z + (camOriginRel.x * sinY + camOriginRel.z * cosY),
+      x:
+        this.camera.target.x +
+        (camOriginRel.x * cosY_neg - camOriginRel.z * sinY_neg),
+      y:
+        this.camera.target.y +
+        (camOriginRel.y * cosP_neg + camOriginRel.z * sinP_neg),
+      z:
+        this.camera.target.z +
+        (camOriginRel.x * sinY_neg + camOriginRel.z * cosY_neg),
     };
 
     if (Math.abs(ry1) < 0.0001) {
@@ -239,22 +291,27 @@ export class Renderer3D {
     screenY: number,
     distanceMeters: number = 1.5,
   ): Point3D {
-    const rect = this.canvas.getBoundingClientRect();
-    const width = rect.width || 1;
-    const height = rect.height || 1;
+    if (this.viewportWidth === 0 || this.viewportHeight === 0) {
+      this.updateViewportCache();
+    }
+    this.updateCameraCache();
+
+    const width = this.viewportWidth || 1;
+    const height = this.viewportHeight || 1;
 
     const normX = (screenX - width / 2) / this.fov;
     const normY = -(screenY - height / 2) / this.fov;
 
-    const cosP = Math.cos(-this.camera.pitch);
-    const sinP = Math.sin(-this.camera.pitch);
-    const ry1 = normY * cosP - 1 * sinP;
-    const rz1 = normY * sinP + 1 * cosP;
+    const cosP_neg = this.cosP;
+    const sinP_neg = -this.sinP;
+    const cosY_neg = this.cosY;
+    const sinY_neg = -this.sinY;
 
-    const cosY = Math.cos(-this.camera.yaw);
-    const sinY = Math.sin(-this.camera.yaw);
-    const rx2 = normX * cosY - rz1 * sinY;
-    const rz2 = normX * sinY + rz1 * cosY;
+    const ry1 = normY * cosP_neg - 1 * sinP_neg;
+    const rz1 = normY * sinP_neg + 1 * cosP_neg;
+
+    const rx2 = normX * cosY_neg - rz1 * sinY_neg;
+    const rz2 = normX * sinY_neg + rz1 * cosY_neg;
 
     const rayDirLen = Math.sqrt(rx2 * rx2 + ry1 * ry1 + rz2 * rz2) || 1;
     const dirX = rx2 / rayDirLen;
@@ -263,13 +320,19 @@ export class Renderer3D {
 
     const camOriginRel = {
       x: 0,
-      y: -this.camera.distance * Math.sin(this.camera.pitch),
-      z: -this.camera.distance * Math.cos(this.camera.pitch),
+      y: -this.camera.distance * this.sinP,
+      z: -this.camera.distance * this.cosP,
     };
     const camOriginWorld = {
-      x: this.camera.target.x + (camOriginRel.x * cosY - camOriginRel.z * sinY),
-      y: this.camera.target.y + (camOriginRel.y * cosP + camOriginRel.z * sinP),
-      z: this.camera.target.z + (camOriginRel.x * sinY + camOriginRel.z * cosY),
+      x:
+        this.camera.target.x +
+        (camOriginRel.x * cosY_neg - camOriginRel.z * sinY_neg),
+      y:
+        this.camera.target.y +
+        (camOriginRel.y * cosP_neg + camOriginRel.z * sinP_neg),
+      z:
+        this.camera.target.z +
+        (camOriginRel.x * sinY_neg + camOriginRel.z * cosY_neg),
     };
 
     return {
@@ -289,10 +352,17 @@ export class Renderer3D {
     unit: DistanceUnit,
     angleUnit: AngleUnit,
   ): void {
-    const rect = this.canvas.getBoundingClientRect();
+    // Refresh camera trigonometric factors & viewport cache once per frame
+    this.updateCameraCache();
+    if (this.viewportWidth === 0 || this.viewportHeight === 0) {
+      this.updateViewportCache();
+    }
+    const width = this.viewportWidth;
+    const height = this.viewportHeight;
+
     const ctx = this.ctx;
 
-    ctx.clearRect(0, 0, rect.width, rect.height);
+    ctx.clearRect(0, 0, width, height);
 
     // 1. Draw 3D Ground Grid (or spatial crosshairs in AR mode)
     this.renderGrid();

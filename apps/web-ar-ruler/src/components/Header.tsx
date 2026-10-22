@@ -76,7 +76,7 @@ export const Header: React.FC<HeaderProps> = ({
         <button
           className="btn btn-secondary btn-badge-wrapper"
           onClick={onOpenHistory}
-          aria-label="Measurement History"
+          aria-label={`Measurement History${historyCount > 0 ? `, ${historyCount} saved` : ""}`}
           title="Measurement History"
         >
           <span aria-hidden="true">

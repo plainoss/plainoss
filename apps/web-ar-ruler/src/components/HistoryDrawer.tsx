@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { X, Copy, Trash2, Ruler } from "lucide-react";
 import { MeasurementRecord } from "@plainoss/core";
 
@@ -21,12 +21,24 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
   onCopyRecord,
   onCopyAll,
 }) => {
+  const [confirmingClear, setConfirmingClear] = useState(false);
+
   if (!isOpen) return null;
+
+  const handleClose = () => {
+    setConfirmingClear(false);
+    onClose();
+  };
+
+  const handleConfirmClear = () => {
+    onClearAll();
+    setConfirmingClear(false);
+  };
 
   return (
     <div
       className="drawer-backdrop"
-      onClick={onClose}
+      onClick={handleClose}
       role="dialog"
       aria-modal="true"
       aria-label="Measurement History"
@@ -36,10 +48,10 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
           <h2>Measurement History</h2>
           <button
             className="btn-icon"
-            onClick={onClose}
+            onClick={handleClose}
             aria-label="Close history panel"
           >
-            <X size={18} />
+            <X size={18} aria-hidden="true" />
           </button>
         </div>
 
@@ -48,18 +60,40 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
             className="btn btn-secondary btn-sm"
             onClick={onCopyAll}
             disabled={records.length === 0}
+            aria-label="Copy all measurement records"
           >
-            <Copy size={14} />
+            <Copy size={14} aria-hidden="true" />
             <span>Copy All</span>
           </button>
-          <button
-            className="btn btn-danger btn-sm"
-            onClick={onClearAll}
-            disabled={records.length === 0}
-          >
-            <Trash2 size={14} />
-            <span>Clear History</span>
-          </button>
+
+          {confirmingClear ? (
+            <div className="inline-confirm-group">
+              <button
+                className="btn btn-danger btn-sm"
+                onClick={handleConfirmClear}
+                aria-label="Confirm clear all measurement history"
+              >
+                <span>Confirm Clear</span>
+              </button>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={() => setConfirmingClear(false)}
+                aria-label="Cancel clear history"
+              >
+                <span>Cancel</span>
+              </button>
+            </div>
+          ) : (
+            <button
+              className="btn btn-danger btn-sm"
+              onClick={() => setConfirmingClear(true)}
+              disabled={records.length === 0}
+              aria-label="Clear all measurement history"
+            >
+              <Trash2 size={14} aria-hidden="true" />
+              <span>Clear History</span>
+            </button>
+          )}
         </div>
 
         <div className="drawer-list">
@@ -92,15 +126,17 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
                   <button
                     className="btn btn-secondary btn-xs"
                     onClick={() => onCopyRecord(r)}
+                    aria-label={`Copy measurement ${r.formatted}`}
                   >
-                    <Copy size={12} />
+                    <Copy size={12} aria-hidden="true" />
                     <span>Copy</span>
                   </button>
                   <button
                     className="btn btn-danger btn-xs"
                     onClick={() => onDeleteRecord(r.id)}
+                    aria-label={`Delete measurement ${r.formatted}`}
                   >
-                    <Trash2 size={12} />
+                    <Trash2 size={12} aria-hidden="true" />
                     <span>Delete</span>
                   </button>
                 </div>

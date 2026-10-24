@@ -169,6 +169,12 @@ body {
   }
 }
 
+.inline-confirm-group {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+}
+
 .btn-start-ar-hero {
   background: linear-gradient(135deg, #0284c7, #38bdf8);
   color: #0f172a;

@@ -43,7 +43,7 @@ No Google service-account key is created. The federation provider requires numer
 6. Set environment variable `PLAY_RELEASE_STATUS=completed`, then repository variable `PLAY_INTERNAL_ENABLED=true`.
 7. Dispatch the workflow again on `main`. It creates the next version and publishes to internal. Re-run that same GitHub run to exercise retry handling. Check Play and test an upgrade from the previous version.
 
-Finish the listing, real device screenshots, privacy-policy URL, Data safety, content rating, audience and other declarations before production. Review ARCore/Google Play Services data practices when completing Data safety; absence of an app analytics SDK does not answer every SDK declaration. Listing text and release notes are versioned under `androidApp/src/main/play/`. The automated upload publishes the bundle and release notes, not listing changes or policy declarations.
+Finish the listing, real device screenshots, Data safety, content rating, audience and other declarations before production. The checked-in [privacy policy](ar-ruler-privacy.md) will be available after merge at `https://github.com/plainoss/plainoss/blob/main/docs/ar-ruler-privacy.md`; use that URL in Console. Settings includes the ARCore disclosure and links to the app and Google privacy policies. Review ARCore/Google Play Services data practices when completing Data safety; absence of an app analytics SDK does not answer every SDK declaration. Listing text and release notes are versioned under `androidApp/src/main/play/`. The automated upload publishes the bundle and release notes, not listing changes or policy declarations.
 
 ## Versions, freshness and retries
 

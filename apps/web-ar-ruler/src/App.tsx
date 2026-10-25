@@ -215,6 +215,38 @@ export function App() {
     }
   }, [isARSupported, points, unit]);
 
+  useEffect(() => {
+    if (!isARActive) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (
+        e.defaultPrevented ||
+        e.repeat ||
+        e.ctrlKey ||
+        e.metaKey ||
+        e.altKey ||
+        (e.target instanceof HTMLElement &&
+          e.target.closest(
+            "input, textarea, select, button, [contenteditable]",
+          ))
+      )
+        return;
+      if (e.key === "Escape") {
+        e.preventDefault();
+        xrEngineRef.current?.endAR();
+      } else if (
+        ["c", "r", "Delete"].includes(
+          e.key.length === 1 ? e.key.toLowerCase() : e.key,
+        ) &&
+        points.length > 0
+      ) {
+        e.preventDefault();
+        handleReset();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isARActive, points.length, handleReset]);
+
   // Dynamic Instruction Icon & Text
   let statusIcon = <Crosshair size={16} aria-hidden="true" />;
   let statusMessage = "Surface detected — Tap to set Point 1";
@@ -251,20 +283,22 @@ export function App() {
 
       {/* 2. Fullscreen 1-Tap Trigger (Tap anywhere to start AR) */}
       {isARSupported && !isARActive && (
-        <div
+        <button
+          type="button"
           className="fullscreen-tap-launcher"
           onClick={handleStartAR}
-          role="button"
-          tabIndex={0}
+          aria-label="Start AR Ruler"
         >
-          <div className="tap-launcher-content">
-            <div className="pulsing-ar-badge">
+          <span className="tap-launcher-content">
+            <span className="pulsing-ar-badge">
               <Camera size={38} strokeWidth={1.75} />
-            </div>
-            <h2>AR Ruler</h2>
-            <p>Tap anywhere on screen to begin</p>
-          </div>
-        </div>
+            </span>
+            <span className="tap-launcher-title">AR Ruler</span>
+            <span className="tap-launcher-hint">
+              Tap anywhere on screen to begin
+            </span>
+          </span>
+        </button>
       )}
 
       {/* 3. WebXR Unsupported Screen */}
@@ -323,7 +357,10 @@ export function App() {
               className={`btn-ar-circle-icon btn-ar-clear ${points.length > 0 ? "active" : ""}`}
               onClick={handleReset}
               onPointerDown={handleUIControlInteraction}
-              title="Clear Measurement"
+              disabled={points.length === 0}
+              title={
+                points.length > 0 ? "Clear Measurement" : "No points to clear"
+              }
               aria-label="Clear Measurement"
             >
               <RotateCcw size={18} strokeWidth={2.2} />

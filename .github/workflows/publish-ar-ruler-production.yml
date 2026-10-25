@@ -1,0 +1,67 @@
+name: Publish AR Ruler to Production
+
+run-name: "AR Ruler production: version ${{ inputs.version_code }} by @${{ github.actor }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_code:
+        description: "Version code installed and tested from Play internal testing (confirms device checks passed)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: play-app-plainoss-arruler
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: android-production
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION_CODE: ${{ inputs.version_code }}
+      VERSION_OFFSET: ${{ vars.ANDROID_VERSION_CODE_OFFSET || '100000' }}
+      ANDROID_UPLOAD_CERTIFICATE_SHA256: ${{ vars.ANDROID_UPLOAD_CERTIFICATE_SHA256 }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check production publishing is enabled
+        env:
+          ENABLED: ${{ vars.PLAY_PRODUCTION_ENABLED }}
+        run: |
+          if [[ "$ENABLED" != true ]]; then
+            echo '::error::Production is paused. Configure android-production and set PLAY_PRODUCTION_ENABLED=true.'
+            exit 1
+          fi
+          [[ "$VERSION_CODE" =~ ^[1-9][0-9]{0,9}$ ]] || exit 1
+          test -n "$ANDROID_UPLOAD_CERTIFICATE_SHA256"
+      - name: Download and verify the tested internal artifact
+        run: python3 tools/release/production-artifact.py "$VERSION_CODE" release
+      - name: Authenticate production publisher using GitHub OIDC
+        id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.PLAY_SERVICE_ACCOUNT }}
+          create_credentials_file: false
+          token_format: access_token
+          access_token_scopes: https://www.googleapis.com/auth/androidpublisher
+      - name: Promote the existing bundle
+        env:
+          PLAY_ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
+        run: |
+          python3 tools/release/promote-production.py release "$VERSION_CODE"
+      - name: Report recovery instructions
+        if: failure()
+        run: |
+          echo '::error::Check Play Console before retrying. Rerun this run with the same tested version; do not rebuild or silently select another version.'

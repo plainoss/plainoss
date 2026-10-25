@@ -15,10 +15,10 @@ def inspect(directory, verify=False):
     checksum = hashlib.sha256(bundle.read_bytes()).hexdigest()
     if checksum != metadata["sha256"] or metadata["commit"] != os.environ["GITHUB_SHA"]:
         raise ValueError("Artifact checksum or source commit mismatch")
-    base = "https://androidpublisher.googleapis.com/androidpublisher/v3/applications/app.plainoss.arruler/edits"
+    base = "https://androidpublisher.googleapis.com/androidpublisher/v3/applications/app.plainoss.arruler"
 
-    def api(method, suffix="", body=None):
-        request = urllib.request.Request(base + suffix, method=method,
+    def api(method, suffix="", body=None, collection="/edits"):
+        request = urllib.request.Request(base + collection + suffix, method=method,
             data=json.dumps(body).encode() if body is not None else None,
             headers={"Authorization": "Bearer " + os.environ["PLAY_ACCESS_TOKEN"],
                      "Content-Type": "application/json"})
@@ -44,6 +44,12 @@ def inspect(directory, verify=False):
             raise ValueError("Candidate is stale: Play already contains a newer version")
         if not existing and code in all_codes:
             raise ValueError("This version code is already used by another artifact")
+        if not verify and not (published and existing):
+            # GPP's commit uses Play's default review behavior. Do not let an
+            # internal release cancel and restart a production review.
+            production = api("GET", "/tracks/production/releases", collection="").get("releases", [])
+            if any(r.get("releaseLifecycleState") == "RELEASE_LIFECYCLE_STATE_IN_REVIEW" for r in production):
+                raise ValueError("Production is in review; wait for Google before publishing a new internal release")
         if published and existing:
             state = "published"
         elif existing:
@@ -56,7 +62,7 @@ def inspect(directory, verify=False):
             if verify:
                 raise ValueError("Bundle exists, but the expected internal release was not found")
             api("PUT", f"/{edit}/tracks/internal", {"track": "internal", "releases": [release]})
-            api("POST", f"/{edit}:commit", {})
+            api("POST", f"/{edit}:commit?changesInReviewBehavior=ERROR_IF_IN_REVIEW")
             committed = True
             state = "published"
         else:

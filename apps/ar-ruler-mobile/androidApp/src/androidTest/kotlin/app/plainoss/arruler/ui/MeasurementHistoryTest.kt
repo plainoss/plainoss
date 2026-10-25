@@ -1,6 +1,7 @@
 package app.plainoss.arruler.ui
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.content.ContextWrapper
 import android.graphics.Bitmap
 import android.graphics.Color
@@ -17,6 +18,10 @@ import app.plainoss.arruler.ar.ArController
 import app.plainoss.arruler.ar.ArFrame
 import app.plainoss.arruler.core.*
 import java.io.File
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 import java.util.UUID
 import org.json.JSONArray
 import org.junit.After
@@ -43,12 +48,86 @@ class MeasurementHistoryTest {
         directory.deleteRecursively()
     }
 
+    @Test fun recreatedStoreWaitsForPhotoAndMetadataTransaction() {
+        val committing = CountDownLatch(1)
+        val allowCommit = CountDownLatch(1)
+        val constructorStarted = CountDownLatch(1)
+        val blockingContext = object : ContextWrapper(context) {
+            override fun getSharedPreferences(name: String, mode: Int): SharedPreferences {
+                val preferences = context.getSharedPreferences(name, mode)
+                return object : SharedPreferences by preferences {
+                    override fun edit(): SharedPreferences.Editor {
+                        val editor = preferences.edit()
+                        return object : SharedPreferences.Editor by editor {
+                            override fun putString(key: String?, value: String?): SharedPreferences.Editor {
+                                editor.putString(key, value)
+                                return this
+                            }
+                            override fun putInt(key: String?, value: Int): SharedPreferences.Editor {
+                                editor.putInt(key, value)
+                                return this
+                            }
+                            override fun remove(key: String?): SharedPreferences.Editor {
+                                editor.remove(key)
+                                return this
+                            }
+                            override fun commit(): Boolean {
+                                committing.countDown()
+                                check(allowCommit.await(10, TimeUnit.SECONDS)) { "Test commit timed out" }
+                                return editor.commit()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        val savingStore = MeasurementStore(blockingContext)
+        val recreatedContext = object : ContextWrapper(context) {
+            override fun getNoBackupFilesDir(): File {
+                constructorStarted.countDown()
+                return context.noBackupFilesDir
+            }
+        }
+        val executor = Executors.newFixedThreadPool(2)
+        val entry = record(photo = true)
+        val bitmap = Bitmap.createBitmap(32, 32, Bitmap.Config.ARGB_8888)
+        try {
+            val saved = executor.submit<List<MeasurementRecord>> {
+                savingStore.saveMeasurement(entry, bitmap, emptyList(), 20)
+            }
+            // Pause after the JPEG exists, before metadata contains its reference: the precise
+            // interval in which a recreated store previously deleted the active photo.
+            assertTrue(committing.await(5, TimeUnit.SECONDS))
+            val photo = File(directory, "measurement-photos/${entry.id}.jpg")
+            assertTrue(photo.exists())
+            val recreated = executor.submit<MeasurementStore> { MeasurementStore(recreatedContext) }
+            assertTrue(constructorStarted.await(5, TimeUnit.SECONDS))
+            try {
+                recreated.get(250, TimeUnit.MILLISECONDS)
+                fail("Startup cleanup must wait until the active save commits")
+            } catch (_: TimeoutException) { /* Expected: constructor is waiting on the transaction. */ }
+            assertTrue("Cleanup must not unlink the active JPEG", photo.exists())
+            allowCommit.countDown()
+            assertEquals(listOf(entry), saved.get(5, TimeUnit.SECONDS))
+            val reloaded = recreated.get(5, TimeUnit.SECONDS)
+            assertEquals(listOf(entry), reloaded.loadHistory())
+            val decoded = reloaded.loadPhoto(entry.id, 32)
+            assertNotNull("Committed records must retain their photo", decoded)
+            decoded?.recycle()
+            assertFalse(File(directory, "measurement-photos/${entry.id}.tmp").exists())
+        } finally {
+            allowCommit.countDown()
+            executor.shutdownNow()
+            executor.awaitTermination(5, TimeUnit.SECONDS)
+            bitmap.recycle()
+        }
+    }
+
     @Test fun defaultLimitEvictsOldestAndDeletesItsPhoto() {
         assertEquals(20, store.historyLimit)
         val old = record(photo = true)
         val bitmap = Bitmap.createBitmap(32, 32, Bitmap.Config.ARGB_8888)
-        try { store.writePhoto(old.id, bitmap) } finally { bitmap.recycle() }
-        store.saveHistory(listOf(old))
+        try { store.saveMeasurement(old, bitmap, emptyList(), 20) } finally { bitmap.recycle() }
         assertNotNull(store.loadPhoto(old.id, 32))
         val latest = List(20) { record() }
         assertEquals(latest, store.saveHistory(latest + old))
@@ -59,8 +138,7 @@ class MeasurementHistoryTest {
     @Test fun renameRetainsPhotoAndClearKeepsSettings() {
         val entry = record(photo = true)
         val bitmap = Bitmap.createBitmap(32, 32, Bitmap.Config.ARGB_8888)
-        try { store.writePhoto(entry.id, bitmap) } finally { bitmap.recycle() }
-        store.saveHistory(listOf(entry), 50)
+        try { store.saveMeasurement(entry, bitmap, emptyList(), 50) } finally { bitmap.recycle() }
         store.unit = DistanceUnit.FEET
         store.saveHistory(listOf(entry.copy(label = "Dining table")))
         assertEquals("Dining table", MeasurementStore(context).loadHistory().single().label)
@@ -132,8 +210,7 @@ class MeasurementHistoryTest {
         bitmap.eraseColor(Color.rgb(70, 90, 110))
         android.graphics.Canvas(bitmap).drawLine(60f, 160f, 260f, 160f,
             android.graphics.Paint().apply { color = Color.GREEN; strokeWidth = 5f })
-        try { store.writePhoto(entry.id, bitmap) } finally { bitmap.recycle() }
-        store.saveHistory(listOf(entry))
+        try { store.saveMeasurement(entry, bitmap, emptyList(), 20) } finally { bitmap.recycle() }
         compose.setContent {
             MaterialTheme(colorScheme = RulerColors) {
                 Surface(color = Panel, contentColor = MaterialTheme.colorScheme.onSurface) {

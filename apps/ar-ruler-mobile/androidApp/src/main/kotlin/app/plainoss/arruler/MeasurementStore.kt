@@ -21,8 +21,8 @@ class MeasurementStore(context: Context) {
     private val photos = File(context.noBackupFilesDir, "measurement-photos")
 
     init {
-        // Only the store owns these files; remove leftovers from interrupted saves on startup.
-        cleanupPhotos(loadHistory())
+        // Activities can recreate this store while a previous instance is still saving.
+        synchronized(storageLock) { cleanupPhotos(loadHistory()) }
     }
 
     val needsHistoryLimitChoice: Boolean
@@ -32,7 +32,24 @@ class MeasurementStore(context: Context) {
         get() = preferences.getInt("historyLimit", DEFAULT_RECORDS).takeIf { it in HISTORY_LIMITS }
             ?: DEFAULT_RECORDS
 
-    fun writePhoto(id: String, bitmap: Bitmap) {
+    /** The photo and its reference are one transaction, including rollback and orphan cleanup. */
+    fun saveMeasurement(
+        record: MeasurementRecord,
+        photo: Bitmap?,
+        history: List<MeasurementRecord>,
+        limit: Int,
+    ): List<MeasurementRecord> = synchronized(storageLock) {
+        require(record.hasPhoto == (photo != null))
+        try {
+            if (photo != null) writePhoto(record.id, photo)
+            saveHistory(listOf(record) + history, limit)
+        } catch (error: Exception) {
+            if (photo != null) deletePhoto(record.id)
+            throw error
+        }
+    }
+
+    private fun writePhoto(id: String, bitmap: Bitmap) {
         check(photos.isDirectory || photos.mkdirs()) { "Could not create photo storage" }
         val destination = photoFile(id)
         val temporary = File(photos, "$id.tmp")
@@ -57,7 +74,7 @@ class MeasurementStore(context: Context) {
         BitmapFactory.decodeFile(file.path, options)
     }.getOrNull()
 
-    fun deletePhoto(id: String) { photoFile(id).delete() }
+    private fun deletePhoto(id: String) { photoFile(id).delete() }
 
     private fun photoFile(id: String): File {
         require(id.matches(Regex("[A-Za-z0-9-]+"))) { "Invalid measurement ID" }
@@ -82,7 +99,9 @@ class MeasurementStore(context: Context) {
             preferences.edit { putBoolean("permissionAsked", value) }
         }
 
-    fun loadHistory(): List<MeasurementRecord> = runCatching {
+    fun loadHistory(): List<MeasurementRecord> = synchronized(storageLock) { readHistory() }
+
+    private fun readHistory(): List<MeasurementRecord> = runCatching {
         val array = JSONArray(preferences.getString("history", "[]"))
         (0 until array.length())
             .mapNotNull { index ->
@@ -115,7 +134,7 @@ class MeasurementStore(context: Context) {
 
     /** Commit metadata before deleting unreferenced photos. A failed commit keeps old files intact. */
     @SuppressLint("ApplySharedPref", "UseKtx") // Callers run on IO; the commit result is needed for rollback.
-    fun saveHistory(records: List<MeasurementRecord>, limit: Int? = null): List<MeasurementRecord> {
+    fun saveHistory(records: List<MeasurementRecord>, limit: Int? = null): List<MeasurementRecord> = synchronized(storageLock) {
         require(limit == null || limit in HISTORY_LIMITS)
         // Renaming or deleting a legacy record must not silently choose a limit or trim history.
         val preserveLegacy = limit == null && needsHistoryLimitChoice
@@ -154,7 +173,7 @@ class MeasurementStore(context: Context) {
             error("Could not save history")
         }
         cleanupPhotos(retained)
-        return retained
+        retained
     }
 
     private fun cleanupPhotos(records: List<MeasurementRecord>) {
@@ -166,6 +185,8 @@ class MeasurementStore(context: Context) {
         enumValues<T>().firstOrNull { it.name == value } ?: fallback
 
     companion object {
+        // Shared by every instance: an instance lock cannot protect activity recreation.
+        private val storageLock = Any()
         const val MAX_RECORDS = 200
         const val DEFAULT_RECORDS = 20
         val HISTORY_LIMITS = listOf(20, 50, 100, 200)

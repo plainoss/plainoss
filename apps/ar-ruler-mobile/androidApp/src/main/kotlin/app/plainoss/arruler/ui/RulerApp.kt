@@ -51,6 +51,8 @@ import app.plainoss.arruler.ar.ArFrame
 import app.plainoss.arruler.core.*
 import java.util.UUID
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
@@ -313,18 +315,16 @@ fun RulerApp(
                             label = if (practice) "Practice" else "AR measurement",
                             hasPhoto = capture != null,
                         )
-                        // Do not dispatch a committed save back into a cancelled composition: the
-                        // next launch will reload it even if the activity disappears during disk I/O.
                         val retained = withContext(Dispatchers.IO) {
-                            if (capture != null) {
-                                val photo = measurementPhoto(capture, record, photoDensity)
-                                try { store.writePhoto(id, photo) } finally { photo.recycle() }
-                            }
+                            val photo = capture?.let { measurementPhoto(it, record, photoDensity) }
                             try {
-                                store.saveHistory(listOf(record) + history, historyLimit)
-                            } catch (error: Exception) {
-                                store.deletePhoto(id)
-                                throw error
+                                // Rendering may outlive composition cancellation. Do not start a
+                                // new transaction after cancellation; an already-started one finishes
+                                // under the store's shared lock before another instance can clean up.
+                                currentCoroutineContext().ensureActive()
+                                store.saveMeasurement(record, photo, history, historyLimit)
+                            } finally {
+                                photo?.recycle()
                             }
                         }
                         history = retained

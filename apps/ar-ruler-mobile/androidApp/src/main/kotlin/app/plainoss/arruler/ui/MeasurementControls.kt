@@ -58,12 +58,6 @@ internal fun MetricCard(
         color = Panel.copy(alpha = .8f),
     ) {
         Column(Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
-            Box(
-                Modifier.align(Alignment.CenterHorizontally)
-                    .padding(bottom = 4.dp)
-                    .size(width = 28.dp, height = 3.dp)
-                    .background(Muted.copy(alpha = .5f), CircleShape)
-            )
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(
                     Modifier.weight(1f)
@@ -87,7 +81,7 @@ internal fun MetricCard(
                                 "Area · closed"
                             drawingArea -> "Area · drawing"
                             else -> snapshot.mode.label
-                        } + if (expanded) "  ▴" else "  ▾",
+                        } + if (expanded) " · Hide details ▴" else " · Details ▾",
                         fontSize = 12.sp,
                         color = Muted,
                     )

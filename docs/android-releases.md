@@ -31,6 +31,8 @@ Repository variables: `PLAY_INTERNAL_ENABLED` (`false` initially) and `ANDROID_V
 
 The setup session generated the upload key and passwords under ignored `.release/ar-ruler/`, with directory permissions 700 and sensitive file permissions 600. **Back up `upload.jks` and `signing.json` to your password manager or another secure location before deleting this checkout.** GitHub secret values cannot be retrieved afterward. The public upload certificate is `upload-certificate.pem`. Never commit these credentials. Google retains the separate app-signing key when Play App Signing is enabled.
 
+The first CI-built release (100002) was uploaded through Console and installed successfully on a physical device by the maintainer. Keyless CI then published version 100003 successfully. Automatic internal publishing is enabled; production remains disabled.
+
 No Google service-account key is created. The federation provider requires numeric repository ID `1338224263`, owner ID `318181168`, branch `main`, environment `android-release`, and workflow `plainoss/plainoss/.github/workflows/publish-ar-ruler-internal.yml@refs/heads/main`, for push or manual-dispatch events. Its principal may impersonate only the dedicated service account. That account needs Play read access and testing-track release permission for AR Ruler only; production, finance, admin and other apps are excluded. Store listing changes are managed separately in Console until explicitly granted.
 
 ## Bootstrap and enable internal releases
@@ -63,7 +65,7 @@ PR checks generate a disposable signing key and use no repository/environment se
 
 ## Device and production gate
 
-Record the tested version code, source commit, device model, Android version and result for the device checklist in the mobile README: permissions/AR availability, scanning and all measurement modes, point editing, units, history, persistence, sharing, practice canvas, lifecycle/rotation, tracking recovery and known reference measurements. Test Play installation and upgrade while preserving history and preferences. Also test a 16 KB runtime.
+Record the tested version code, source commit, device model, Android version and result for the device checklist in the mobile README: permissions/AR availability, scanning and all measurement modes, point editing, units, history, persistence, sharing, lifecycle/rotation, tracking recovery and known reference measurements. Test Play installation and upgrade while preserving history and preferences. Also test a 16 KB runtime.
 
 Production automation is a separate PR after these checks pass and Console production eligibility is established. It must select an explicit eligible internal version, record testing evidence and the testing start time, respect a configurable testing period and blocker flag, and promote the same uploaded version without rebuilding. Keep managed publishing off if approval should lead directly to publication. Report submission, review and live availability distinctly. Do not enable a production schedule as part of initial setup.
 

@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.net.toUri
+import app.plainoss.arruler.BuildConfig
 import app.plainoss.arruler.MeasurementStore
 import app.plainoss.arruler.ar.ArController
 import app.plainoss.arruler.ar.ArFrame
@@ -58,11 +59,12 @@ fun RulerApp(
     store: MeasurementStore,
     cameraGranted: Boolean,
     cameraError: String?,
-    practice: Boolean,
+    practiceEnabled: Boolean,
     onPermissionResult: (Boolean) -> Unit,
     onPracticeChange: (Boolean) -> Unit,
     onRetryCamera: () -> Unit,
 ) {
+    val practice = BuildConfig.DEBUG && practiceEnabled
     MaterialTheme(colorScheme = RulerColors) {
         val context = LocalContext.current
         val haptics = LocalHapticFeedback.current
@@ -450,8 +452,10 @@ fun RulerApp(
                                     ) {
                                         Text("Open app settings")
                                     }
-                                TextButton(onClick = { onPracticeChange(true) }) {
-                                    Text("Use practice canvas")
+                                if (BuildConfig.DEBUG) {
+                                    TextButton(onClick = { onPracticeChange(true) }) {
+                                        Text("Developer practice canvas")
+                                    }
                                 }
                             }
                         }
@@ -645,18 +649,18 @@ fun RulerApp(
                             TextButton(onClick = {
                                 context.startActivity(Intent(Intent.ACTION_VIEW, "https://github.com/plainoss/plainoss/blob/main/docs/ar-ruler-privacy.md".toUri()))
                             }) { Text("AR Ruler privacy policy") }
-                            HorizontalDivider(Modifier.padding(vertical = 16.dp))
-                            Row(
+                            if (BuildConfig.DEBUG) HorizontalDivider(Modifier.padding(vertical = 16.dp))
+                            if (BuildConfig.DEBUG) Row(
                                 Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Column(Modifier.weight(1f)) {
                                     Text(
-                                        "Practice canvas",
+                                        "Developer practice canvas",
                                         style = MaterialTheme.typography.titleMedium,
                                     )
                                     Text(
-                                        "Try measuring without the camera",
+                                        "Debug builds only",
                                         color = Muted,
                                         fontSize = 13.sp,
                                     )
@@ -707,31 +711,33 @@ fun RulerApp(
                                     )
                                 }
                             }
-                            Spacer(Modifier.height(16.dp))
-                            Text("Explore a sample", style = MaterialTheme.typography.titleMedium)
-                            Text(
-                                "Samples open in the practice canvas.",
-                                color = Muted,
-                                fontSize = 13.sp,
-                            )
-                            MeasurementPresets.all.forEach { preset ->
-                                TextButton(
-                                    onClick = {
-                                        onPracticeChange(true)
-                                        changeMode(preset.mode)
-                                        practiceSnapshot = preset.snapshot()
-                                        practiceSelectedPoint = null
-                                        practiceBounds = preset.points
-                                        sheet = null
+                            if (BuildConfig.DEBUG) {
+                                Spacer(Modifier.height(16.dp))
+                                Text("Developer samples", style = MaterialTheme.typography.titleMedium)
+                                Text(
+                                    "Samples open in the practice canvas.",
+                                    color = Muted,
+                                    fontSize = 13.sp,
+                                )
+                                MeasurementPresets.all.forEach { preset ->
+                                    TextButton(
+                                        onClick = {
+                                            onPracticeChange(true)
+                                            changeMode(preset.mode)
+                                            practiceSnapshot = preset.snapshot()
+                                            practiceSelectedPoint = null
+                                            practiceBounds = preset.points
+                                            sheet = null
+                                        }
+                                    ) {
+                                        Text(preset.label)
                                     }
-                                ) {
-                                    Text(preset.label)
                                 }
                             }
                             HorizontalDivider(Modifier.padding(vertical = 16.dp))
                             Text("A little guidance", style = MaterialTheme.typography.titleMedium)
                             Text(
-                                "Move your phone slowly over a well-lit, textured floor, table or wall. When the target turns green, aim at your starting point and press +. Move to the next point and repeat.\n\nDistance uses two points. Path adds connected segments. For Area, place at least three corners in order on one flat surface, then tap the first point or Close area. The filled shape remains translucent so you can see the surface. Press + after closing to start a new area. Angle uses three points, with the second as the vertex.\n\nTap a placed point or its number in Move point to select it. In AR, aim at its new position and tap Move; in practice, tap its new position on the grid. Tap Cancel or the selected point again to cancel. Undo reopens a closed area before removing corners. Otherwise it removes the last point. Clear starts again. Save keeps a measurement in history. Units change the display without changing your points.\n\nAR provides an estimate. Reflective or plain surfaces and lost tracking can reduce accuracy.\n\nAll measurements stay on your device. No account, ads or analytics. History keeps the latest 200 saves. Camera images are never saved.",
+                                "Move your phone slowly over a well-lit, textured floor, table or wall. When the target turns green, aim at your starting point and press +. Move to the next point and repeat.\n\nDistance uses two points. Path adds connected segments. For Area, place at least three corners in order on one flat surface, then tap the first point or Close area. The filled shape remains translucent so you can see the surface. Press + after closing to start a new area. Angle uses three points, with the second as the vertex.\n\nTap a placed point or its number in Move point to select it. Aim at its new position and tap Move. Tap Cancel or the selected point again to cancel. Undo reopens a closed area before removing corners. Otherwise it removes the last point. Clear starts again. Save keeps a measurement in history. Units change the display without changing your points.\n\nAR provides an estimate. Reflective or plain surfaces and lost tracking can reduce accuracy.\n\nAll measurements stay on your device. No account, ads or analytics. History keeps the latest 200 saves. Camera images are never saved.",
                                 color = Muted,
                                 style = MaterialTheme.typography.bodyMedium,
                                 modifier = Modifier.padding(top = 10.dp, bottom = 32.dp),

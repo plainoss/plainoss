@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="500" viewBox="0 0 1024 500">
+  <defs>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0V40" fill="none" stroke="#243127" stroke-width="1"/>
+    </pattern>
+    <linearGradient id="fade"><stop stop-color="#0e1510"/><stop offset="1" stop-color="#0e1510" stop-opacity="0"/></linearGradient>
+  </defs>
+  <path fill="#0e1510" d="M0 0H1024V500H0z"/>
+  <path fill="url(#grid)" d="M0 0H1024V500H0z"/>
+  <path fill="url(#fade)" d="M0 0H580V500H0z"/>
+  <g font-family="Arial, Helvetica, sans-serif">
+    <text x="64" y="80" font-size="15" letter-spacing="5" fill="#b4c4b8">PLAINOSS</text>
+    <text x="60" y="194" font-size="84" font-weight="700" letter-spacing="-3" fill="#f3f7ef">AR Ruler</text>
+    <text x="64" y="253" font-size="29" fill="#d3f88b">Measure your space.</text>
+    <text x="64" y="299" font-size="19" fill="#b4c4b8">Distance · Path · Area · Angle</text>
+    <path d="M64 345H440" stroke="#344636"/>
+    <text x="64" y="381" font-size="17" fill="#b4c4b8">Camera measurements. Local history.</text>
+    <text x="64" y="410" font-size="17" fill="#b4c4b8">Save, copy and share results.</text>
+  </g>
+  <path d="M655 113L938 167L883 383L600 329Z" fill="#d3f88b" fill-opacity="0.07" stroke="#d3f88b" stroke-width="3"/>
+  <g fill="#d3f88b" stroke="#0e1510" stroke-width="6">
+    <circle cx="655" cy="113" r="10"/><circle cx="938" cy="167" r="10"/>
+    <circle cx="883" cy="383" r="10"/><circle cx="600" cy="329" r="10"/>
+  </g>
+  <g fill="none" stroke="#d3f88b" stroke-width="1" opacity="0.4">
+    <circle cx="655" cy="113" r="23"/><circle cx="883" cy="383" r="23"/>
+    <path d="M615 76L966 143M583 356L903 417" stroke-dasharray="4 8"/>
+  </g>
+  <rect x="666" y="207" width="207" height="102" rx="22" fill="#1b281e" stroke="#3c5037"/>
+  <text x="691" y="238" font-family="Arial, Helvetica, sans-serif" font-size="12" letter-spacing="3" fill="#b4c4b8">AREA</text>
+  <text x="690" y="286" font-family="Arial, Helvetica, sans-serif" font-size="46" font-weight="700" fill="#d3f88b">12 m²</text>
+</svg>

@@ -1,1 +1,1 @@
-Initial AR Ruler internal test: camera measurements for distance, paths, areas and angles; editable points; local measurement history; unit conversion; and a practice canvas.
+Camera-only release: measurement tools, editable points, unit conversion and saved history. The developer practice canvas is now available only in debug builds.

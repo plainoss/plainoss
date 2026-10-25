@@ -50,17 +50,18 @@ class MainActivity : ComponentActivity() {
                 store = store,
                 cameraGranted = cameraGranted,
                 cameraError = cameraError,
-                practice = practice,
+                practiceEnabled = practice,
                 onPermissionResult = { granted ->
                     cameraGranted = granted
                     if (granted) startCamera(retry = true)
                 },
                 onPracticeChange = { enabled ->
-                    if (enabled != practice) {
+                    val developerPractice = BuildConfig.DEBUG && enabled
+                    if (developerPractice != practice) {
                         controller.clear()
                         frame = ArFrame()
-                        practice = enabled
-                        if (enabled) controller.pause() else startCamera(retry = true)
+                        practice = developerPractice
+                        if (developerPractice) controller.pause() else startCamera(retry = true)
                     }
                 },
                 onRetryCamera = { startCamera(retry = true) },

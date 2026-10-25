@@ -62,6 +62,9 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: "platform-tools platforms;android-36 build-tools;35.0.0"
+          log-accepted-android-sdk-licenses: false
 
       - name: Setup Gradle and validate wrapper
         uses: gradle/actions/setup-gradle@v4

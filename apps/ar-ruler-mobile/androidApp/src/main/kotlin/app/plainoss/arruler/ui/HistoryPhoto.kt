@@ -42,7 +42,7 @@ internal fun HistoryPhoto(store: MeasurementStore, record: MeasurementRecord, en
 
 
 @Composable
-internal fun HistoryPhotoDialog(store: MeasurementStore, record: MeasurementRecord, onDismiss: () -> Unit) {
+internal fun HistoryPhotoDialog(store: MeasurementStore, record: MeasurementRecord, onShare: () -> Unit, onDismiss: () -> Unit) {
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxWidth().padding(12.dp), color = Panel,
             contentColor = MaterialTheme.colorScheme.onSurface) {
@@ -50,7 +50,10 @@ internal fun HistoryPhotoDialog(store: MeasurementStore, record: MeasurementReco
                 Text(record.label, style = MaterialTheme.typography.titleLarge)
                 Text("${record.mode.label} · ${record.formatted}", color = Lime)
                 HistoryPhoto(store, record, enlarged = true)
-                TextButton(onClick = onDismiss) { Text("Close photo") }
+                Row {
+                    TextButton(onClick = onShare) { Text("Share photo") }
+                    TextButton(onClick = onDismiss) { Text("Close photo") }
+                }
             }
         }
     }

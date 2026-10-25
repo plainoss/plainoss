@@ -12,6 +12,15 @@
         android:label="AR Ruler"
         android:supportsRtl="true"
         android:theme="@style/Theme.ArRuler">
+        <provider
+            android:name=".MeasurementImageProvider"
+            android:authorities="${applicationId}.measurement-images"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/measurement_share_paths" />
+        </provider>
         <meta-data android:name="com.google.ar.core" android:value="${arCoreMode}" />
         <activity
             android:name=".MainActivity"

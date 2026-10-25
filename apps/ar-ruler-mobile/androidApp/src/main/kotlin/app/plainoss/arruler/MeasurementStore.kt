@@ -74,6 +74,15 @@ class MeasurementStore(context: Context) {
         BitmapFactory.decodeFile(file.path, options)
     }.getOrNull()
 
+    /** Copy under the transaction lock so deletion/eviction cannot unlink a photo mid-copy. */
+    internal fun copyPhotoForSharing(id: String, destination: File) = synchronized(storageLock) {
+        check(readHistory().any { it.id == id && it.hasPhoto }) { "Photo is no longer in history" }
+        photoFile(id).inputStream().use { input ->
+            destination.outputStream().use { output -> input.copyTo(output) }
+        }
+        check(destination.length() > 0) { "Photo is unavailable" }
+    }
+
     private fun deletePhoto(id: String) { photoFile(id).delete() }
 
     private fun photoFile(id: String): File {

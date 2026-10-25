@@ -46,6 +46,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.net.toUri
 import app.plainoss.arruler.BuildConfig
 import app.plainoss.arruler.MeasurementStore
+import app.plainoss.arruler.measurementImageShareIntent
 import app.plainoss.arruler.ar.ArController
 import app.plainoss.arruler.ar.ArFrame
 import app.plainoss.arruler.core.*
@@ -89,6 +90,8 @@ fun RulerApp(
         var choosingInitialLimit by remember { mutableStateOf(store.needsHistoryLimitChoice) }
         var pendingLimit by remember { mutableStateOf<Int?>(null) }
         var saving by remember { mutableStateOf(false) }
+        var sharingPhoto by remember { mutableStateOf(false) }
+        var photoShareError by remember { mutableStateOf(false) }
         val photoDensity = LocalDensity.current
         var practiceSnapshot by remember { mutableStateOf(MeasurementSnapshot(mode)) }
         var practiceSelectedPoint by remember { mutableStateOf<Int?>(null) }
@@ -218,6 +221,24 @@ fun RulerApp(
                     "Share measurements",
                 )
             )
+        }
+        val sharePhoto: (MeasurementRecord) -> Unit = { record ->
+            if (!sharingPhoto) {
+                sharingPhoto = true
+                scope.launch {
+                    try {
+                        val intent = withContext(Dispatchers.IO) {
+                            measurementImageShareIntent(context, store, record)
+                        }
+                        context.startActivity(Intent.createChooser(intent, "Share measurement photo"))
+                    } catch (error: Exception) {
+                        if (error is CancellationException) throw error
+                        photoShareError = true
+                    } finally {
+                        sharingPhoto = false
+                    }
+                }
+            }
         }
         val changeMode: (MeasurementMode) -> Unit = { selected ->
             if (selected != mode) {
@@ -675,6 +696,7 @@ fun RulerApp(
                                 updateHistory(history.filterNot { it.id == id })
                             },
                             onClear = { showClearHistory = true },
+                            sharePhoto = sharePhoto,
                         )
                     "units" -> MeasurementUnitsSheet(unit) { selected ->
                         unit = selected
@@ -791,7 +813,7 @@ fun RulerApp(
                             HorizontalDivider(Modifier.padding(vertical = 16.dp))
                             Text("A little guidance", style = MaterialTheme.typography.titleMedium)
                             Text(
-                                "Move your phone slowly over a well-lit, textured floor, table or wall. When the target turns green, aim at your starting point and press +. Move to the next point and repeat.\n\nDistance uses pairs of points: after completing one distance, press + twice to add another without clearing the first. Save keeps all completed distances together in one photo. Finish the current pair or Undo its starting point before saving. Path adds connected segments, each labelled with its length; the result panel shows the total. For Area, place at least three corners in order on one flat surface, then tap the first point or Close area. The filled shape remains translucent so you can see the surface. Press + after closing to start a new area. Angle uses three points, with the second as the vertex.\n\nTap a placed point or its number in Move point to select it. Aim at its new position and tap Move. Tap Cancel or the selected point again to cancel. Undo reopens a closed area before removing corners. Otherwise it removes the last point. Clear starts again. Save keeps a measurement in history. Units change the display without changing your points.\n\nAR provides an estimate. Reflective or plain surfaces and lost tracking can reduce accuracy.\n\nAll measurements stay on your device. No account, ads or analytics. History keeps the latest 20 saves by default; choose a larger limit in settings. Saving a camera measurement also saves a photo with its measurement overlay on this device. Delete a record or clear history to remove its photo.",
+                                "Move your phone slowly over a well-lit, textured floor, table or wall. When the target turns green, aim at your starting point and press +. Move to the next point and repeat.\n\nDistance uses pairs of points: after completing one distance, press + twice to add another without clearing the first. Save keeps all completed distances together in one photo. Finish the current pair or Undo its starting point before saving. Path adds connected segments, each labelled with its length; the result panel shows the total. For Area, place at least three corners in order on one flat surface, then tap the first point or Close area. The filled shape remains translucent so you can see the surface. Press + after closing to start a new area. Angle uses three points, with the second as the vertex.\n\nTap a placed point or its number in Move point to select it. Aim at its new position and tap Move. Tap Cancel or the selected point again to cancel. Undo reopens a closed area before removing corners. Otherwise it removes the last point. Clear starts again. Save keeps a measurement in history. Units change the display without changing your points.\n\nAR provides an estimate. Reflective or plain surfaces and lost tracking can reduce accuracy.\n\nAll measurements stay on your device. No account, ads or analytics. History keeps the latest 20 saves by default; choose a larger limit in settings. Saving a camera measurement also saves a photo with its measurement overlay on this device. Share photo in history or the enlarged viewer sends the saved image with its overlay through Android’s sharing tools. Share text sends the result instead. Delete a record or clear history to remove its photo.",
                                 color = Muted,
                                 style = MaterialTheme.typography.bodyMedium,
                                 modifier = Modifier.padding(top = 10.dp, bottom = 32.dp),
@@ -828,6 +850,13 @@ fun RulerApp(
                     TextButton(onClick = { showClearHistory = false }) { Text("Cancel") }
                 },
             )
+        if (photoShareError) {
+            AlertDialog(onDismissRequest = { photoShareError = false },
+                title = { Text("Could not share photo") },
+                text = { Text("The photo is unavailable or could not be prepared. You can still share the measurement as text.") },
+                confirmButton = { TextButton(onClick = { photoShareError = false }) { Text("OK") } },
+            )
+        }
         if (saving) {
             Dialog(onDismissRequest = {}, properties = DialogProperties(
                 dismissOnBackPress = false, dismissOnClickOutside = false)) {

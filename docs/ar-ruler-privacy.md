@@ -18,7 +18,7 @@ You can delete individual saved measurements or clear all saved history in the a
 
 ## Copying and sharing
 
-If you choose Copy, the selected result is placed on the Android clipboard. If you choose Share, Android sends the measurement text to the app or recipient you select. The receiving app, clipboard and operating system are subject to their own privacy practices.
+If you choose Copy, the selected result is placed on the Android clipboard. If you choose Share text, Android sends the measurement text to the app or recipient you select. If you choose Share photo in history or the enlarged photo viewer, Android shares the saved image with its measurement overlay and result text. The receiving app gets temporary read access to that image only. A separate copy is prepared in private app cache so sharing can finish even if you delete the history entry. Copies older than one day are removed when preparing another share; Android may also clear cached copies. The receiving app, clipboard and operating system are subject to their own privacy practices.
 
 ## Accounts, advertising and analytics
 

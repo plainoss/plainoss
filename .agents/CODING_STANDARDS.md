@@ -2,7 +2,7 @@
 
 ## 1. Zero Bloat Philosophy
 
-- **No Unnecessary Dependencies**: If a feature can be implemented in <= 30 lines of clean native TypeScript/CSS/DOM APIs, do not install an npm package for it.
+- **No Unnecessary Dependencies**: Prefer a small implementation using standard TypeScript, CSS, DOM, Kotlin, or platform APIs over an additional runtime dependency.
 - **No Telemetry / Ads / Trackers**: PlainOSS tools are strictly private and local-first.
 - **Hermetic & Offline-First**: All tools should function without an internet connection whenever possible.
 
@@ -19,8 +19,17 @@
 - Always support dark and light color schemes via CSS custom properties and `prefers-color-scheme`.
 - Optimize Core Web Vitals: ensure LCP < 1.2s, INP < 100ms, and CLS = 0.
 
-## 4. Mobile (React Native / Expo) Guidelines
+## 4. Native Mobile (Kotlin Multiplatform) Guidelines
 
-- Expo SDK with New Architecture enabled (`newArchEnabled: true` in `app.json`).
-- Use Continuous Native Generation (CNG) via Expo config plugins rather than manual native file modifications.
-- Ensure responsive layouts across phone and tablet screens using Flexbox and `useWindowDimensions`.
+- Create native projects in `apps/<tool>-mobile`, with portable logic in `shared/src/commonMain` and common Kotlin tests in `shared/src/commonTest`. Common code must not import Android or Apple APIs.
+- Implement Android first. Keep permissions, camera/sensors, session lifecycle, rendering, persistence, and Jetpack Compose UI in `androidApp` using native platform APIs.
+- Use Material 3 components, accessible labels, system insets, and responsive layouts. Start platform features directly when their permissions and availability checks allow it; provide actionable recovery states when unavailable.
+- Add iOS targets and native iOS platform adapters when needed, sharing the Kotlin domain logic. Do not require Apple tooling for Android-only development and CI.
+- Each native Gradle project builds independently of pnpm/Turbo. Run its shared JVM tests, Android lint, and debug assembly with the checked-in wrapper. The root `pnpm run android:check` shortcut checks AR Ruler.
+- Verify hardware-dependent behavior on a suitable physical device. For AR Ruler, this includes tracking, camera lifecycle, and measurement accuracy on an ARCore-supported device.
+
+## 5. Web and Native Behavior Parity
+
+- Web engines remain TypeScript in `packages/core`; native equivalents are Kotlin in each mobile project's `shared` module.
+- Keep calculations, units, state transitions, and edge cases consistent across implementations. Use matching reference cases in Vitest and common Kotlin tests.
+- Keep platform presentation and hardware adapters native while preserving the tool's functional behavior.

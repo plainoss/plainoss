@@ -8,8 +8,8 @@ Thank you for your interest in contributing to PlainOSS! We are building a colle
 
 1. **Zero Bloat & Privacy First**: No telemetry, analytics, ad SDKs, or unnecessary runtime dependencies.
 2. **Offline-First**: Every tool should function without an internet connection whenever possible.
-3. **Core Separation**: Calculation engines live in `packages/core/` with 100% pure TypeScript and hermetic Vitest tests.
-4. **Modern Standards**: Web apps follow Google Chrome's `modern-web-guidance`; Mobile apps use modern Expo SDK with New Architecture.
+3. **Core Separation**: Web calculation engines live in `packages/core/` with pure TypeScript and hermetic Vitest tests. Native apps use Kotlin Multiplatform shared cores with common Kotlin tests. Keep equivalent calculations consistent across both implementations.
+4. **Modern Standards**: Web apps follow Google Chrome's `modern-web-guidance`; native apps start with Android, Jetpack Compose Material 3, and Android platform APIs. Add iOS targets and native platform adapters when needed.
 
 ---
 
@@ -19,6 +19,7 @@ Thank you for your interest in contributing to PlainOSS! We are building a colle
 
 - Node.js >= 20.0.0
 - pnpm >= 10.0.0
+- For Android development: JDK 17 or 21 and Android SDK Platform 36.
 
 ### Getting Started
 
@@ -37,6 +38,8 @@ pnpm run test
 pnpm run typecheck
 ```
 
+Native projects live in `apps/<tool>-mobile` and build with their checked-in Gradle wrappers, independently of pnpm/Turbo and Node. Follow [AR Ruler's setup guide](../apps/ar-ruler-mobile/README.md) for an existing example; `pnpm run android:check` is a convenience shortcut for that app.
+
 ---
 
 ## Proposing & Adding a New Tool
@@ -52,9 +55,12 @@ pnpm run scaffold-tool <tool-name>
 
 Follow the checklist in [.agents/TOOL_BLUEPRINT.md](../.agents/TOOL_BLUEPRINT.md):
 
-1. Implement pure logic in `packages/core/src/<tool>/` with unit tests in `packages/core/test/<tool>.test.ts`.
+1. Implement web logic in `packages/core/src/<tool>/` with unit tests in `packages/core/test/<tool>.test.ts`.
 2. Implement Web UI in `apps/web-<tool>/`.
-3. Implement Mobile UI in `apps/mobile-<tool>/`.
+3. Implement the native equivalent in `apps/<tool>-mobile/shared/src/commonMain`, with matching reference cases in `shared/src/commonTest`.
+4. Implement Android UI and platform integration in `apps/<tool>-mobile/androidApp`. Add iOS targets and a native iOS adapter when needed.
+
+The scaffolder creates the TypeScript core, web app, and Kotlin Multiplatform mobile project. Web and native engines are separate implementations with equivalent behavior; Android and future iOS apps share the Kotlin core.
 
 ---
 
@@ -86,5 +92,11 @@ Examples:
    pnpm run typecheck
    pnpm run test
    ```
+   For native changes, run the affected mobile project's checks and complete the relevant device checks in its README:
+   ```bash
+   cd apps/<tool>-mobile
+   ./gradlew :shared:jvmTest :androidApp:lintDebug :androidApp:assembleDebug
+   ```
+   For AR Ruler, `pnpm run android:check` runs these checks from the repository root.
 3. Open a Pull Request against `main`. Fill in the PR template completely.
 4. CI will run automated linting, typechecking, and tests. Once approved, the PR will be squash-merged.

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { scaffoldMobile, validateMobileTemplate } from "./scaffold-mobile";
 
 const toolArg = process.argv[2];
 
@@ -24,14 +25,114 @@ const toolTitle = toolKebab
 const toolClean = toolKebab.replace(/-/g, "");
 
 const rootDir = path.resolve(__dirname, "..");
+const coreDir = path.join(rootDir, "packages", "core", "src", toolKebab);
+const coreTestDir = path.join(rootDir, "packages", "core", "test");
+const webDir = path.join(rootDir, "apps", `web-${toolKebab}`);
+const mobileDir = path.join(rootDir, "apps", `${toolKebab}-mobile`);
+
+// Validate every destination before writing so rerunning cannot overwrite a tool.
+if (!/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(toolKebab)) {
+  console.error(
+    "Tool names must start with a letter and contain letters, digits, or dashes.",
+  );
+  process.exit(1);
+}
+const packageKeywords = new Set([
+  "abstract",
+  "as",
+  "assert",
+  "boolean",
+  "break",
+  "byte",
+  "case",
+  "catch",
+  "char",
+  "class",
+  "const",
+  "continue",
+  "default",
+  "do",
+  "double",
+  "else",
+  "enum",
+  "extends",
+  "false",
+  "final",
+  "finally",
+  "float",
+  "for",
+  "fun",
+  "goto",
+  "if",
+  "implements",
+  "import",
+  "in",
+  "instanceof",
+  "int",
+  "interface",
+  "is",
+  "long",
+  "native",
+  "new",
+  "null",
+  "object",
+  "package",
+  "private",
+  "protected",
+  "public",
+  "return",
+  "short",
+  "static",
+  "strictfp",
+  "super",
+  "switch",
+  "synchronized",
+  "this",
+  "throw",
+  "throws",
+  "transient",
+  "true",
+  "try",
+  "typealias",
+  "typeof",
+  "val",
+  "var",
+  "void",
+  "volatile",
+  "when",
+  "while",
+]);
+if (packageKeywords.has(toolClean)) {
+  console.error(
+    `The normalized package name "${toolClean}" is a reserved Kotlin/Java keyword.`,
+  );
+  process.exit(1);
+}
+try {
+  for (const destination of [
+    coreDir,
+    path.join(coreTestDir, `${toolKebab}.test.ts`),
+    webDir,
+    mobileDir,
+    path.join(rootDir, "apps", `mobile-${toolKebab}`),
+  ]) {
+    if (fs.existsSync(destination)) {
+      throw new Error(
+        `Refusing to overwrite existing tool files: ${destination}`,
+      );
+    }
+  }
+  validateMobileTemplate(rootDir);
+} catch (error) {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exit(1);
+}
 
 console.log(
   `\n🚀 Scaffolding new PlainOSS standalone tool: "${toolTitle}" (${toolKebab})\n`,
 );
 
 // 1. packages/core/src/<toolKebab>/
-const coreDir = path.join(rootDir, "packages", "core", "src", toolKebab);
-const coreTestDir = path.join(rootDir, "packages", "core", "test");
 fs.mkdirSync(coreDir, { recursive: true });
 fs.mkdirSync(coreTestDir, { recursive: true });
 
@@ -68,7 +169,6 @@ describe('${toolTitle} Core Engine', () => {
 console.log(`✅ Created Core Engine: packages/core/src/${toolKebab}/`);
 
 // 2. apps/web-<toolKebab>/
-const webDir = path.join(rootDir, "apps", `web-${toolKebab}`);
 const webSrcDir = path.join(webDir, "src");
 fs.mkdirSync(webSrcDir, { recursive: true });
 
@@ -247,190 +347,20 @@ fs.writeFileSync(
 );
 console.log(`✅ Created Standalone Web App: apps/web-${toolKebab}/`);
 
-// 3. apps/mobile-<toolKebab>/
-const mobileDir = path.join(rootDir, "apps", `mobile-${toolKebab}`);
-const mobileSrcDir = path.join(mobileDir, "src");
-fs.mkdirSync(mobileSrcDir, { recursive: true });
-
-fs.writeFileSync(
-  path.join(mobileDir, "package.json"),
-  JSON.stringify(
-    {
-      name: `mobile-${toolKebab}`,
-      version: "0.1.0",
-      private: true,
-      main: "index.js",
-      scripts: {
-        start: "expo start",
-        android: "expo start --android",
-        ios: "expo start --ios",
-        web: "expo start --web",
-        typecheck: "tsc --noEmit",
-      },
-      dependencies: {
-        "@plainoss/core": "workspace:*",
-        expo: "~52.0.0",
-        "expo-status-bar": "~2.0.0",
-        react: "18.3.1",
-        "react-native": "0.76.7",
-      },
-      devDependencies: {
-        "@plainoss/tsconfig": "workspace:*",
-        "@types/react": "~18.3.12",
-        typescript: "^5.7.0",
-      },
-    },
-    null,
-    2,
-  ),
+// 3. apps/<toolKebab>-mobile/ (Android-first Kotlin Multiplatform)
+scaffoldMobile({ rootDir, toolKebab, toolPascal, toolTitle, toolClean });
+console.log(
+  `✅ Created Kotlin Multiplatform Mobile App: apps/${toolKebab}-mobile/`,
 );
-
-fs.writeFileSync(
-  path.join(mobileDir, "app.json"),
-  JSON.stringify(
-    {
-      expo: {
-        name: toolTitle,
-        slug: toolKebab,
-        version: "0.1.0",
-        orientation: "portrait",
-        userInterfaceStyle: "automatic",
-        newArchEnabled: true,
-        ios: {
-          supportsTablet: true,
-          bundleIdentifier: `app.plainoss.${toolClean}`,
-        },
-        android: {
-          adaptiveIcon: {
-            backgroundColor: "#0a0a0c",
-          },
-          package: `app.plainoss.${toolClean}`,
-        },
-      },
-    },
-    null,
-    2,
-  ),
-);
-
-fs.writeFileSync(
-  path.join(mobileDir, "tsconfig.json"),
-  JSON.stringify(
-    {
-      extends: "@plainoss/tsconfig/react-native.json",
-      compilerOptions: {
-        noEmit: true,
-      },
-      include: ["src", "App.tsx", "index.js"],
-    },
-    null,
-    2,
-  ),
-);
-
-fs.writeFileSync(
-  path.join(mobileDir, "App.tsx"),
-  `import React, { useState } from 'react';
-import { StyleSheet, Text, View, TextInput, SafeAreaView } from 'react-native';
-import { StatusBar } from 'expo-status-bar';
-import { compute${toolPascal} } from '@plainoss/core/${toolKebab}/index';
-
-export default function App() {
-  const [val, setVal] = useState('10');
-  const num = parseFloat(val) || 0;
-  const result = compute${toolPascal}(num);
-
-  return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar style="auto" />
-      <View style={styles.content}>
-        <Text style={styles.title}>${toolTitle}</Text>
-        <Text style={styles.subtitle}>Free, ad-free utility by PlainOSS</Text>
-
-        <View style={styles.card}>
-          <Text style={styles.label}>Input Value</Text>
-          <TextInput
-            style={styles.input}
-            value={val}
-            onChangeText={setVal}
-            keyboardType="numeric"
-          />
-          <Text style={styles.resultText}>
-            Result: {result}
-          </Text>
-        </View>
-      </View>
-    </SafeAreaView>
-  );
-}
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#0a0a0c',
-  },
-  content: {
-    padding: 24,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#f2f2f4',
-    marginBottom: 4,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: '#a0a0a8',
-    marginBottom: 24,
-  },
-  card: {
-    backgroundColor: '#141418',
-    padding: 20,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-  },
-  label: {
-    color: '#f2f2f4',
-    fontSize: 15,
-    fontWeight: '600',
-    marginBottom: 8,
-  },
-  input: {
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
-    borderRadius: 8,
-    padding: 12,
-    color: '#f2f2f4',
-    fontSize: 16,
-    marginBottom: 16,
-  },
-  resultText: {
-    color: '#3b82f6',
-    fontSize: 18,
-    fontWeight: '700',
-  },
-});
-`,
-);
-
-fs.writeFileSync(
-  path.join(mobileDir, "index.js"),
-  `import { registerRootComponent } from 'expo';
-import App from './App';
-
-registerRootComponent(App);
-`,
-);
-console.log(`✅ Created Standalone Mobile App: apps/mobile-${toolKebab}/`);
 
 console.log(`
 🎉 Successfully scaffolded "${toolTitle}"!
 Next steps:
-1. Run "pnpm install" to link workspace dependencies.
-2. Implement your mathematical engine in packages/core/src/${toolKebab}/index.ts.
-3. Test logic: "pnpm --filter @plainoss/core test"
-4. Run Web: "pnpm --filter web-${toolKebab} dev"
-5. Run Mobile: "pnpm --filter mobile-${toolKebab} start"
+1. Run "pnpm install" to link web workspace dependencies.
+2. Implement your web engine in packages/core/src/${toolKebab}/index.ts.
+3. Implement matching portable Kotlin logic in apps/${toolKebab}-mobile/shared/src/commonMain.
+4. Test web logic: "pnpm --filter @plainoss/core test"
+5. Run Web: "pnpm --filter web-${toolKebab} dev"
+6. Test/build Android: "cd apps/${toolKebab}-mobile && ./gradlew :shared:jvmTest :androidApp:assembleDebug"
+7. Open apps/${toolKebab}-mobile in Android Studio, or run "./gradlew :androidApp:installDebug" there.
 `);

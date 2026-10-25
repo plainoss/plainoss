@@ -42,3 +42,51 @@ jobs:
 
       - name: Build Packages & Apps
         run: pnpm run build
+
+  verify-android:
+    name: Android Build, Lint & Shared Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: apps/ar-ruler-mobile
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: "platform-tools platforms;android-36 build-tools;35.0.0"
+          log-accepted-android-sdk-licenses: false
+
+      - name: Setup Gradle and validate wrapper
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Verify Android app and shared core
+        run: ./gradlew :shared:jvmTest :androidApp:lintDebug :androidApp:assembleDebug
+
+      - name: Upload installable debug APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: ar-ruler-mobile-debug-apk
+          path: apps/ar-ruler-mobile/androidApp/build/outputs/apk/debug/androidApp-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+      - name: Upload Android verification reports
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ar-ruler-mobile-verification-reports
+          path: |
+            apps/ar-ruler-mobile/shared/build/reports/
+            apps/ar-ruler-mobile/androidApp/build/reports/
+          if-no-files-found: ignore

@@ -10,10 +10,15 @@ build/
 out/
 web-build/
 
-# Expo / React Native
-.expo/
-android/
-ios/
+# Native build state (native source directories are committed)
+.gradle/
+.kotlin/
+local.properties
+*.apk
+*.aab
+
+# Obsolete generated app artifacts retained in existing local checkouts
+/apps/mobile-ar-ruler/
 *.orig.*
 *.jks
 *.p8

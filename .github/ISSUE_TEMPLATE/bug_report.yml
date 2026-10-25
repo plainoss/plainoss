@@ -1,7 +1,7 @@
 name: 🐛 Bug Report
 description: Report a bug, crash, or unexpected behavior in a PlainOSS tool.
-title: 'fix(<tool-name>): <short description>'
-labels: ['bug', 'triage']
+title: "fix(<tool-name>): <short description>"
+labels: ["bug", "triage"]
 body:
   - type: markdown
     attributes:
@@ -14,12 +14,12 @@ body:
       label: Affected Tool / Package
       description: Which tool or package is experiencing the bug?
       options:
-        - '@plainoss/core'
-        - 'web-sun-tracker'
-        - 'mobile-sun-tracker'
-        - 'web-ar-ruler'
-        - 'mobile-ar-ruler'
-        - 'Other (Infrastructure / Tooling)'
+        - "@plainoss/core"
+        - "web-sun-tracker"
+        - "sun-tracker-mobile"
+        - "web-ar-ruler"
+        - "ar-ruler-mobile"
+        - "Other (Infrastructure / Tooling)"
     validations:
       required: true
 
@@ -29,12 +29,12 @@ body:
       label: Platform
       description: Where did you observe this bug?
       options:
-        - 'Web (Chrome / Chromium)'
-        - 'Web (Safari / iOS)'
-        - 'Web (Firefox)'
-        - 'Android App'
-        - 'iOS App'
-        - 'CLI / Node.js'
+        - "Web (Chrome / Chromium)"
+        - "Web (Safari / iOS)"
+        - "Web (Firefox)"
+        - "Android App"
+        - "iOS App"
+        - "CLI / Node.js"
     validations:
       required: true
 

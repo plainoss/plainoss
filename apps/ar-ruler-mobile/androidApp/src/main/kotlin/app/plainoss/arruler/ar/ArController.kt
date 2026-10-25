@@ -39,6 +39,8 @@ import com.google.ar.core.exceptions.UnavailableSdkTooOldException
 import com.google.ar.core.exceptions.UnavailableUserDeclinedInstallationException
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicBoolean
+import java.nio.ByteBuffer
+import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.atomic.AtomicLong
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
@@ -49,6 +51,27 @@ import kotlin.concurrent.thread
  * anchor operations belong exclusively to the GL thread. The shared module stays ARCore-free.
  */
 class ArController(private val activity: Activity) : GLSurfaceView.Renderer {
+    data class Capture(val frame: ArFrame, val rgba: ByteArray)
+    private val captureGeneration = AtomicLong(0L)
+    private val captureRequest = AtomicReference<((Result<Capture>) -> Unit)?>(null)
+
+    fun requestCapture(callback: (Result<Capture>) -> Unit) {
+        checkMainThread()
+        check(sessionRunning && !destroyed) { "Camera is unavailable" }
+        val generation = captureGeneration.get()
+        @Suppress("DEPRECATION") val rotation = activity.windowManager.defaultDisplay.rotation
+        check(captureRequest.compareAndSet(null) { result ->
+            @Suppress("DEPRECATION") val currentRotation = activity.windowManager.defaultDisplay.rotation
+            callback(if (generation == captureGeneration.get() && rotation == currentRotation) result
+                else Result.failure(IllegalStateException("Camera changed during capture")))
+        }) { "A photo is already pending" }
+    }
+
+    fun cancelCapture() {
+        captureGeneration.incrementAndGet()
+        captureRequest.getAndSet(null)?.invoke(Result.failure(IllegalStateException("Capture cancelled")))
+    }
+
     var onFrame: ((ArFrame) -> Unit)? = null
     var onError: ((String) -> Unit)? = null
     var onPointAdded: (() -> Unit)? = null
@@ -129,6 +152,7 @@ class ArController(private val activity: Activity) : GLSurfaceView.Renderer {
     fun pause() {
         checkMainThread()
         activityResumed = false
+        cancelCapture()
         main.removeCallbacks(checkAvailabilityAgain)
         stopSession()
     }
@@ -420,7 +444,7 @@ class ArController(private val activity: Activity) : GLSurfaceView.Renderer {
             processCommands(frame, cameraTracking)
             val anchorsTracking = anchors.all { it.trackingState == TrackingState.TRACKING }
             val now = SystemClock.uptimeMillis()
-            if (!forceFrame && now - lastFrameDelivery < FRAME_INTERVAL_MS) return
+            if (captureRequest.get() == null && !forceFrame && now - lastFrameDelivery < FRAME_INTERVAL_MS) return
             forceFrame = false
             lastFrameDelivery = now
             val points = anchors.map { it.pose.toPoint() }
@@ -467,6 +491,24 @@ class ArController(private val activity: Activity) : GLSurfaceView.Renderer {
                     targetClipPoint = targetClipPoint,
                     areaClosed = areaClosed,
                 )
+            captureRequest.getAndSet(null)?.let { callback ->
+                val captured = runCatching {
+                    check(cameraTracking && anchorsTracking && selectedPointIndex == null) {
+                        "Wait for tracking to recover before saving"
+                    }
+                    val pixels = ByteBuffer.allocateDirect(Math.multiplyExact(Math.multiplyExact(width, height), 4))
+                    GLES20.glReadPixels(0, 0, width, height, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, pixels)
+                    check(GLES20.glGetError() == GLES20.GL_NO_ERROR) { "Could not capture the camera" }
+                    val rgba = ByteArray(pixels.capacity())
+                    pixels.rewind()
+                    pixels.get(rgba)
+                    Capture(snapshot, rgba)
+                }
+                main.post {
+                    callback(if (!destroyed && sessionRunning && frameRevision == commandRevision.get()) captured
+                        else Result.failure(IllegalStateException("Camera changed during capture")))
+                }
+            }
             main.post {
                 if (
                     !destroyed &&

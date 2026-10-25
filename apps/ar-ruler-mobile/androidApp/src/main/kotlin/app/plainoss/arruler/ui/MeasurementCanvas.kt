@@ -12,6 +12,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.nativeCanvas
@@ -80,80 +81,95 @@ internal fun MeasurementOverlay(
             }
         }
     ) {
-        if (frame.width <= 0 || frame.height <= 0 || frame.mode != mode) return@Canvas
-        val scaleX = size.width / frame.width
-        val scaleY = size.height / frame.height
-        fun position(point: ViewportPoint) =
-            Offset((point.x * scaleX).toFloat(), (point.y * scaleY).toFloat())
-        val top = (viewingArea.top * scaleY).toFloat()
-        val bottom = (viewingArea.bottom * scaleY).toFloat()
-        val color = if (frame.tracking && frame.anchorsTracking) Lime else Muted
-        // The UI is drawn above this canvas. Keep the stroke continuous beneath its panels
-        // and padding; only the physical camera viewport clips the rendered geometry.
-        clipRect {
-            val points = projection.points
-            if (mode == MeasurementMode.AREA && projection.fillPolygon.size >= 3) {
-                val polygon = projection.fillPolygon.map(::position)
-                val path =
-                    Path().apply {
-                        moveTo(polygon.first().x, polygon.first().y)
-                        polygon.drop(1).forEach { lineTo(it.x, it.y) }
-                        close()
-                    }
-                drawPath(path, color.copy(alpha = if (areaClosed) .26f else .18f))
-            }
-            // Segment visibility is independent of endpoint marker visibility. The shared
-            // projector clips in 3D before perspective division, only at the camera frustum.
-            projection.segments.forEach { segment ->
-                drawLine(
-                    color = if (segment.isPreview) color.copy(alpha = .8f) else color,
-                    start = position(segment.start),
-                    end = position(segment.end),
-                    strokeWidth = (if (segment.isPreview) 2.dp else 3.dp).toPx(),
-                    cap = StrokeCap.Round,
-                    pathEffect =
-                        if (segment.isPreview)
-                            PathEffect.dashPathEffect(floatArrayOf(8.dp.toPx(), 5.dp.toPx()))
-                        else null,
+        drawMeasurement(frame, mode, projection, cameraProjection, viewingArea, distanceText,
+            areaClosed, canCloseArea, paint)
+    }
+}
+
+internal fun DrawScope.drawMeasurement(
+    frame: ArFrame,
+    mode: MeasurementMode,
+    projection: MeasurementProjection,
+    cameraProjection: MeasurementProjection,
+    viewingArea: ViewportRect,
+    distanceText: String?,
+    areaClosed: Boolean,
+    canCloseArea: Boolean,
+    paint: Paint,
+) {
+    if (frame.width <= 0 || frame.height <= 0 || frame.mode != mode) return
+    val scaleX = size.width / frame.width
+    val scaleY = size.height / frame.height
+    fun position(point: ViewportPoint) =
+        Offset((point.x * scaleX).toFloat(), (point.y * scaleY).toFloat())
+    val top = (viewingArea.top * scaleY).toFloat()
+    val bottom = (viewingArea.bottom * scaleY).toFloat()
+    val color = if (frame.tracking && frame.anchorsTracking) Lime else Muted
+    // The UI is drawn above this canvas. Keep the stroke continuous beneath its panels
+    // and padding; only the physical camera viewport clips the rendered geometry.
+    clipRect {
+        val points = projection.points
+        if (mode == MeasurementMode.AREA && projection.fillPolygon.size >= 3) {
+            val polygon = projection.fillPolygon.map(::position)
+            val path =
+                Path().apply {
+                    moveTo(polygon.first().x, polygon.first().y)
+                    polygon.drop(1).forEach { lineTo(it.x, it.y) }
+                    close()
+                }
+            drawPath(path, color.copy(alpha = if (areaClosed) .26f else .18f))
+        }
+        // Segment visibility is independent of endpoint marker visibility. The shared
+        // projector clips in 3D before perspective division, only at the camera frustum.
+        projection.segments.forEach { segment ->
+            drawLine(
+                color = if (segment.isPreview) color.copy(alpha = .8f) else color,
+                start = position(segment.start),
+                end = position(segment.end),
+                strokeWidth = (if (segment.isPreview) 2.dp else 3.dp).toPx(),
+                cap = StrokeCap.Round,
+                pathEffect =
+                    if (segment.isPreview)
+                        PathEffect.dashPathEffect(floatArrayOf(8.dp.toPx(), 5.dp.toPx()))
+                    else null,
+            )
+        }
+        points.forEachIndexed { index, point ->
+            if (point != null) {
+                val p = position(point)
+                drawCircle(Ink, 8.dp.toPx(), p)
+                drawCircle(color, 5.dp.toPx(), p)
+                if (index == 0 && canCloseArea)
+                    drawCircle(color, 18.dp.toPx(), p, style = Stroke(2.dp.toPx()))
+                if (frame.selectedPointIndex == index)
+                    drawCircle(color, 14.dp.toPx(), p, style = Stroke(2.dp.toPx()))
+                paint.textSize = 12.sp.toPx()
+                paint.color = android.graphics.Color.WHITE
+                paint.setShadowLayer(4.dp.toPx(), 0f, 1f, android.graphics.Color.BLACK)
+                drawContext.canvas.nativeCanvas.drawText(
+                    "${index + 1}",
+                    p.x,
+                    p.y - 14.dp.toPx(),
+                    paint,
                 )
             }
-            points.forEachIndexed { index, point ->
-                if (point != null) {
-                    val p = position(point)
-                    drawCircle(Ink, 8.dp.toPx(), p)
-                    drawCircle(color, 5.dp.toPx(), p)
-                    if (index == 0 && canCloseArea)
-                        drawCircle(color, 18.dp.toPx(), p, style = Stroke(2.dp.toPx()))
-                    if (frame.selectedPointIndex == index)
-                        drawCircle(color, 14.dp.toPx(), p, style = Stroke(2.dp.toPx()))
-                    paint.textSize = 12.sp.toPx()
-                    paint.color = android.graphics.Color.WHITE
-                    paint.setShadowLayer(4.dp.toPx(), 0f, 1f, android.graphics.Color.BLACK)
-                    drawContext.canvas.nativeCanvas.drawText(
-                        "${index + 1}",
-                        p.x,
-                        p.y - 14.dp.toPx(),
-                        paint,
-                    )
-                }
-            }
-            if (mode == MeasurementMode.DISTANCE && distanceText != null && viewingArea.isValid) {
-                cameraProjection.segments.firstOrNull()?.let { segment ->
-                    val mid = (position(segment.start) + position(segment.end)) / 2f
-                    paint.textSize = 16.sp.toPx()
-                    paint.color = android.graphics.Color.WHITE
-                    paint.setShadowLayer(6.dp.toPx(), 0f, 1f, android.graphics.Color.BLACK)
-                    // Position the label on the visible portion, but retain the complete world
-                    // distance (the same value as the card, including a live/moving-point preview).
-                    drawContext.canvas.nativeCanvas.drawText(
-                        distanceText,
-                        mid.x,
-                        (mid.y - 16.dp.toPx())
-                            .coerceAtLeast(top + 22.dp.toPx())
-                            .coerceAtMost(bottom - 8.dp.toPx()),
-                        paint,
-                    )
-                }
+        }
+        if (mode == MeasurementMode.DISTANCE && distanceText != null && viewingArea.isValid) {
+            cameraProjection.segments.firstOrNull()?.let { segment ->
+                val mid = (position(segment.start) + position(segment.end)) / 2f
+                paint.textSize = 16.sp.toPx()
+                paint.color = android.graphics.Color.WHITE
+                paint.setShadowLayer(6.dp.toPx(), 0f, 1f, android.graphics.Color.BLACK)
+                // Position the label on the visible portion, but retain the complete world
+                // distance (the same value as the card, including a live/moving-point preview).
+                drawContext.canvas.nativeCanvas.drawText(
+                    distanceText,
+                    mid.x,
+                    (mid.y - 16.dp.toPx())
+                        .coerceAtLeast(top + 22.dp.toPx())
+                        .coerceAtMost(bottom - 8.dp.toPx()),
+                    paint,
+                )
             }
         }
     }

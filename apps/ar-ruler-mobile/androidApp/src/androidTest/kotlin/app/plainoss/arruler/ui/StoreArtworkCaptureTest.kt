@@ -13,6 +13,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
+import app.plainoss.arruler.MeasurementStore
 import app.plainoss.arruler.core.*
 import java.io.File
 import org.junit.Assume.assumeTrue
@@ -31,6 +32,7 @@ class StoreArtworkCaptureTest {
             Point3D(0.0, 0.0, 0.0), Point3D(3.0, 0.0, 0.0),
             Point3D(3.0, 0.0, 4.0), Point3D(0.0, 0.0, 4.0),
         ), areaClosed = true)
+        val store = MeasurementStore(InstrumentationRegistry.getInstrumentation().targetContext)
         var screen by mutableIntStateOf(0)
         compose.setContent {
             MaterialTheme(colorScheme = RulerColors) {
@@ -52,7 +54,8 @@ class StoreArtworkCaptureTest {
                                 record("3", MeasurementMode.ANGLE, 90.0, listOf(
                                     Point3D(1.0, 0.0, 0.0), Point3D(0.0, 0.0, 0.0), Point3D(0.0, 0.0, 1.0)
                                 ), "Example · corner"),
-                            ), copy = {}, share = {}, onDelete = {}, onClear = {})
+                            ), store = store, limit = 20, onRename = { _, _ -> },
+                                copy = {}, share = {}, onDelete = {}, onClear = {})
                         }
                         3 -> MeasurementUnitsSheet(DistanceUnit.METERS) {}
                     }

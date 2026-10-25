@@ -1,1 +1,1 @@
-Camera-only release: measurement tools, editable points, unit conversion and saved history. The developer practice canvas is now available only in debug builds.
+More camera space: compact expandable measurement details, floating capture controls, and inline guidance. Tap the result to access modes, Copy and point editing.

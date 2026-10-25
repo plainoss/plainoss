@@ -5,6 +5,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 
@@ -16,7 +17,23 @@ def gh(*args):
     return subprocess.check_output(["gh", *args], text=True)
 
 
-def download(code, directory):
+def resolve_version(value, offset):
+    value = value.strip()
+    name = re.fullmatch(r"0\.1\.([1-9][0-9]*)", value)
+    if name:
+        # Internal CI assigns 0.1.<run_number> and offset + run_number.
+        code = offset + int(name[1])
+    elif re.fullmatch(r"[1-9][0-9]*", value):
+        code = int(value)
+    else:
+        raise ValueError("Enter the exact Play version name (for example 0.1.7) or numeric "
+                         "version code (for example 100008). No release was selected.")
+    if not 1 <= code <= 2100000000 or code <= offset:
+        raise ValueError("Version is outside the configured internal release sequence")
+    return code, value if name else None
+
+
+def download(code, directory, expected_name=None):
     if not 1 <= code <= 2100000000:
         raise ValueError("Invalid Android version code")
     repository = os.environ["GITHUB_REPOSITORY"]
@@ -46,6 +63,7 @@ def download(code, directory):
     metadata = json.loads((directory / "release.json").read_text())
     if (metadata["applicationId"] != "app.plainoss.arruler" or metadata["versionCode"] != code or
             metadata["commit"] != run["head_sha"] or
+            (expected_name is not None and metadata.get("versionName") != expected_name) or
             hashlib.sha256((directory / "androidApp-release.aab").read_bytes()).hexdigest() != metadata["sha256"]):
         raise ValueError("Artifact identity, source commit or checksum mismatch")
     # Read notes from the tested source, not today's main branch.
@@ -55,12 +73,25 @@ def download(code, directory):
     provenance = {"runId": run["id"], "runUrl": run["html_url"],
                   "actor": os.environ.get("GITHUB_TRIGGERING_ACTOR", os.environ["GITHUB_ACTOR"])}
     (directory / "production-source.json").write_text(json.dumps(provenance, indent=2) + "\n")
+    summary = os.environ.get("GITHUB_STEP_SUMMARY")
+    if summary:
+        with open(summary, "a") as stream:
+            stream.write(f"### Selected release: {metadata.get('versionName', code)} ({code})\n\n"
+                         f"Original internal run: {run['html_url']}\n\n"
+                         f"Source commit: `{metadata['commit']}`\n\n"
+                         f"Bundle SHA-256: `{metadata['sha256']}`\n\n"
+                         "Reusing the original signed bundle; no rebuild or upload.\n")
     return metadata
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("version_code", type=int)
+    parser.add_argument("version", help="Exact Play version name (0.1.7) or version code (100008)")
     parser.add_argument("directory", type=Path)
     args = parser.parse_args()
-    download(args.version_code, args.directory)
+    code, name = resolve_version(args.version, int(os.environ["VERSION_OFFSET"]))
+    download(code, args.directory, expected_name=name)
+    output = os.environ.get("GITHUB_OUTPUT")
+    if output:
+        with open(output, "a") as stream:
+            stream.write(f"version_code={code}\n")

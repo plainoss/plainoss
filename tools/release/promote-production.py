@@ -24,7 +24,13 @@ def api(method, suffix, body=None):
             return json.loads(data) if data else {}
     except urllib.error.HTTPError as error:
         # Include Play's actionable error, never the request's bearer token.
-        raise RuntimeError(f"Play API {method} failed ({error.code}): {error.read().decode()}") from None
+        detail = error.read().decode()
+        if "Only releases with status draft may be created on draft app" in detail:
+            raise RuntimeError("First production release requires Play Console setup. Open "
+                               "Test and release → Production, create a release using the existing "
+                               "verified version, and send it for review. No API release was committed. "
+                               "After Console submission, rerun this same version to verify its state.") from None
+        raise RuntimeError(f"Play API {method} failed ({error.code}): {detail}") from None
 
 
 def validate_artifact(directory, code, certificate):
@@ -63,8 +69,13 @@ def promote(directory, code, certificate):
     try:
         bundles = api("GET", f"/edits/{edit}/bundles").get("bundles", [])
         existing = next((b for b in bundles if b["versionCode"] == code), None)
-        if not existing or existing.get("sha256", "").lower() != metadata["sha256"]:
-            raise ValueError("Play does not contain the exact tested bundle")
+        if not existing:
+            raise ValueError(f"Play's current bundles do not contain the exact tested bundle {code}. "
+                             "It may have been archived after a newer internal release. Check App "
+                             "bundle explorer in Console; do not substitute a newer version silently.")
+        if existing.get("sha256", "").lower() != metadata["sha256"]:
+            raise ValueError(f"Play checksum differs from the exact tested bundle {code}; "
+                             "refusing to submit different bytes")
         state = production_action(api("GET", f"/edits/{edit}/tracks").get("tracks", []), code)
         if state == "submit":
             release = {"name": metadata["versionName"], "versionCodes": [str(code)], "status": "completed",

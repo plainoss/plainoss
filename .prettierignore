@@ -1,0 +1,10 @@
+# Generated outputs and local native build state
+**/build/
+**/dist/
+**/.gradle/
+**/.kotlin/
+.pnpm-store/
+.turbo/
+
+# Obsolete generated app artifacts in existing local checkouts
+apps/mobile-ar-ruler/

@@ -1,7 +1,0 @@
-{
-  "extends": "@plainoss/tsconfig/react-native.json",
-  "compilerOptions": {
-    "noEmit": true
-  },
-  "include": ["src", "App.tsx", "index.js"]
-}

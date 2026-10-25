@@ -1,34 +1,56 @@
-name: Build & Release Mobile Apps
+name: Build Mobile APK Artifact
 
 on:
   push:
     tags:
-      - 'mobile-*'
+      - "mobile-*"
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build-android:
     name: Build Android APK
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: apps/ar-ruler-mobile
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: 22
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
-        with:
-          version: 10.13.1
-
       - name: Setup Java
         uses: actions/setup-java@v5
         with:
-          distribution: 'temurin'
-          java-version: '17'
+          distribution: "temurin"
+          java-version: "17"
 
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Setup Gradle and validate wrapper
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Test, lint and build Android APK
+        run: ./gradlew :shared:jvmTest :androidApp:lintDebug :androidApp:assembleDebug
+
+      - name: Upload installable debug APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: ar-ruler-mobile-debug-apk
+          path: apps/ar-ruler-mobile/androidApp/build/outputs/apk/debug/androidApp-debug.apk
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
+      - name: Upload Android verification reports
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ar-ruler-mobile-verification-reports
+          path: |
+            apps/ar-ruler-mobile/shared/build/reports/
+            apps/ar-ruler-mobile/androidApp/build/reports/
+          if-no-files-found: ignore

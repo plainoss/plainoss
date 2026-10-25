@@ -7,25 +7,27 @@ This is the standard, repeatable recipe for building any new utility tool in Pla
 ## 3-Phase Tool Development Process
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│ 1. Core Engine (packages/core/src/<tool>/)                  │
-│    • Write pure mathematical / computational functions      │
-│    • Write 100% Vitest unit tests in packages/core/test/    │
-└──────────────────────────────┬──────────────────────────────┘
-                               │
-            ┌──────────────────┴──────────────────┐
-            ▼                                     ▼
+┌────────────────────────────────────────────────────────────────┐
+│ 1. Define core behavior and matching reference cases            │
+│    • Pure calculations, units, state transitions, edge cases    │
+│    • TypeScript engine for web; shared Kotlin engine for mobile │
+└───────────────────────────────┬────────────────────────────────┘
+                                │
+             ┌──────────────────┴──────────────────┐
+             ▼                                     ▼
 ┌──────────────────────────────┐    ┌──────────────────────────────┐
-│ 2. Web App (apps/web-<tool>) │    │ 3. Mobile App (apps/mobile-) │
-│    • Query modern-web-guid-  │    │    • Expo standalone app     │
-│      ance skill first        │    │    • Native sensors & camera │
-│    • Zero-bloat CSS & tokens │    │    • Material/Cupertino feel │
+│ 2. Web (apps/web-<tool>)      │    │ 3. Native (<tool>-mobile)    │
+│    • packages/core + Vitest  │    │    • KMP shared + commonTest │
+│    • modern-web-guidance    │    │    • Android Compose first   │
+│    • Accessible HTML / CSS  │    │    • Native platform APIs    │
 └──────────────────────────────┘    └──────────────────────────────┘
 ```
 
 ---
 
 ## Step-by-Step Instructions
+
+Native apps use Kotlin Multiplatform projects in `apps/<tool>-mobile`. Start with Android and keep portable Kotlin logic in `shared/src/commonMain`; add iOS targets and a native platform adapter when needed. [AR Ruler Mobile](../apps/ar-ruler-mobile/README.md) is the existing example.
 
 ### Step 1: Scaffold the Tool
 
@@ -36,13 +38,18 @@ pnpm run scaffold-tool <name-of-tool>
 # Example: pnpm run scaffold-tool sun-tracker
 ```
 
+This creates the TypeScript core, web app, and Kotlin Multiplatform mobile project with `shared` and `androidApp` modules.
+
 ### Step 2: Implement & Test the Core Engine
 
-1. Open `packages/core/src/<tool>/index.ts` and implement the business logic and interfaces.
-2. Open `packages/core/test/<tool>.test.ts` and add comprehensive unit test cases (edge cases, precision checks).
-3. Verify immediately:
+1. Implement web business logic and interfaces in `packages/core/src/<tool>/index.ts`.
+2. Implement the equivalent portable Kotlin logic in `apps/<tool>-mobile/shared/src/commonMain`. Keep Android and Apple APIs out of common code.
+3. Add matching reference cases, edge cases, and precision checks in `packages/core/test/<tool>.test.ts` and the mobile project's `shared/src/commonTest`. These are separate TypeScript and Kotlin implementations whose behavior must agree.
+4. Verify both engines:
    ```bash
    pnpm --filter @plainoss/core test
+   cd apps/<tool>-mobile
+   ./gradlew :shared:jvmTest
    ```
 
 ### Step 3: Implement Web App (`apps/web-<tool>`)
@@ -57,11 +64,15 @@ pnpm run scaffold-tool <name-of-tool>
    pnpm --filter web-<tool> build
    ```
 
-### Step 4: Implement Mobile App (`apps/mobile-<tool>`)
+### Step 4: Implement Native Mobile App (`apps/<tool>-mobile`)
 
-1. Connect core engine to the React Native UI in `apps/mobile-<tool>/App.tsx`.
-2. Configure permissions (Camera, Location, Sensors) in `apps/mobile-<tool>/app.json`.
-3. Verify TypeScript:
+1. Open the generated Gradle project in Android Studio. Use JDK 17 or 21 and Android SDK Platform 36.
+2. Connect the shared Kotlin engine to a native Jetpack Compose Material 3 UI in `androidApp`. Keep permissions, camera/sensors, lifecycle, persistence, and platform rendering in this module.
+3. Use native Android APIs for platform capabilities. Start camera or sensor workflows directly when permission and availability checks allow it, with accessible recovery states when unavailable.
+4. Verify the native app independently of pnpm/Turbo:
    ```bash
-   pnpm --filter mobile-<tool> typecheck
+   cd apps/<tool>-mobile
+   ./gradlew :shared:jvmTest :androidApp:lintDebug :androidApp:assembleDebug
    ```
+5. Test hardware-dependent behavior and lifecycle on a suitable physical device. For AR Ruler, the root `pnpm run android:check` shortcut runs its Gradle checks; its README lists device verification scenarios.
+6. When iOS is needed, add Apple targets to `shared` and a native iOS app/platform adapter. Reuse the Kotlin engine and common tests while keeping permissions, lifecycle, and platform interface behavior native. No iOS app is generated yet.

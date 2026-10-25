@@ -1,0 +1,3 @@
+# Keep Gradle launchers runnable on each platform while normalizing repository text.
+gradlew text eol=lf
+gradlew.bat text eol=crlf

@@ -6,7 +6,6 @@
   "files": [
     "base.json",
     "web.json",
-    "react-native.json",
     "node.json"
   ]
 }

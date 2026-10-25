@@ -3,6 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test android.test.ts"
+  },
   "dependencies": {},
   "devDependencies": {
     "@plainoss/tsconfig": "workspace:*",

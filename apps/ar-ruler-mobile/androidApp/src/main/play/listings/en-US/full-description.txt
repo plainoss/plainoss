@@ -12,7 +12,7 @@ LESS CLUTTER, MORE CAMERA
 Keep the result and Save button close at hand. Expand the details when you want to change modes, copy a result or adjust individual points. Undo a step or clear the measurement and start again.
 
 KEEP THE USEFUL NUMBERS
-Each saved camera measurement includes a photo with its measurement overlay, so you can see what you measured. Tap photos to enlarge them, rename records, or delete records and their photos individually or by clearing history. Keep 20 saves by default, or choose 50, 100 or 200 in settings. Copy one result or share measurement text using Android's sharing tools. Switch between meters, centimeters, millimeters, inches, feet and yards; use degrees or radians for angles. Your unit preferences are remembered.
+Each saved camera measurement includes a photo with its measurement overlay, so you can see what you measured. Tap photos to enlarge them, rename records, or delete records and their photos individually or by clearing history. Keep 20 saves by default, or choose 50, 100 or 200 in settings. Copy one result, share measurement text, or share a saved photo with its measurement overlay using Android's sharing tools. Switch between meters, centimeters, millimeters, inches, feet and yards; use degrees or radians for angles. Your unit preferences are remembered.
 
 NO ACCOUNT. NO ADS.
 PlainOSS adds no advertising or analytics SDKs. Measurements, history and preferences are stored on your device unless you choose to copy or share them. Photos are saved privately on your device when you tap Save.

@@ -29,12 +29,13 @@ internal fun HistorySheet(
     share: (String) -> Unit,
     onDelete: (String) -> Unit,
     onClear: () -> Unit,
+    sharePhoto: (MeasurementRecord) -> Unit = {},
 ) {
     var renaming by remember { mutableStateOf<MeasurementRecord?>(null) }
     var name by remember { mutableStateOf("") }
     var viewing by remember { mutableStateOf<String?>(null) }
     records.firstOrNull { it.id == viewing }?.let { record ->
-        HistoryPhotoDialog(store, record) { viewing = null }
+        HistoryPhotoDialog(store, record, onShare = { sharePhoto(record) }) { viewing = null }
     }
     renaming?.let { record ->
         AlertDialog(
@@ -80,7 +81,7 @@ internal fun HistorySheet(
             val allText =
                 records.joinToString("\n") { "${it.mode.label}: ${it.formatted} (${it.label})" }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                TextButton(onClick = { share(allText) }) { Text("Share all") }
+                TextButton(onClick = { share(allText) }) { Text("Share all text") }
                 TextButton(onClick = { copy(allText) }) { Text("Copy all") }
                 TextButton(onClick = onClear) {
                     Text("Clear history", color = MaterialTheme.colorScheme.error)
@@ -124,7 +125,10 @@ internal fun HistorySheet(
                                 color = Lime,
                                 style = MaterialTheme.typography.headlineMedium,
                             )
-                            TextButton(onClick = { renaming = record; name = record.label }) { Text("Rename") }
+                            Row {
+                                TextButton(onClick = { renaming = record; name = record.label }) { Text("Rename") }
+                                if (record.hasPhoto) TextButton(onClick = { sharePhoto(record) }) { Text("Share photo") }
+                            }
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
                                     "${record.mode.label} · ${record.points.size} points",
@@ -140,7 +144,7 @@ internal fun HistorySheet(
                                         )
                                     }
                                 ) {
-                                    Text("Share")
+                                    Text("Share text")
                                 }
                                 IconButton(
                                     onClick = { onDelete(record.id) },

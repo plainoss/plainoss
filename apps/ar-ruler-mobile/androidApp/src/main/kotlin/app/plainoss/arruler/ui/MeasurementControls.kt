@@ -51,7 +51,8 @@ internal fun MetricCard(
     detailsMaxHeight: Dp = 240.dp,
 ) {
     val drawingArea = snapshot.mode == MeasurementMode.AREA && !snapshot.areaClosed
-    val showPreview = hasPreview && (!snapshot.isReady || editing || drawingArea)
+    val drawingDistance = snapshot.mode == MeasurementMode.DISTANCE && snapshot.points.size % 2 == 1
+    val showPreview = hasPreview && (!snapshot.isReady || editing || drawingArea || drawingDistance)
     Surface(
         modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
@@ -80,13 +81,18 @@ internal fun MetricCard(
                             snapshot.mode == MeasurementMode.AREA && snapshot.areaClosed ->
                                 "Area · closed"
                             drawingArea -> "Area · drawing"
+                            snapshot.mode == MeasurementMode.PATH -> "Path · total"
                             else -> snapshot.mode.label
                         } + if (expanded) " · Hide details ▴" else " · Details ▾",
                         fontSize = 12.sp,
                         color = Muted,
                     )
                     Text(
-                        (if (showPreview) preview else snapshot).formatted(unit, angleUnit),
+                        when {
+                            snapshot.mode == MeasurementMode.DISTANCE && showPreview -> formatDistance(preview.value, unit)
+                            snapshot.mode == MeasurementMode.DISTANCE && snapshot.segments.size > 1 -> "${snapshot.segments.size} distances"
+                            else -> (if (showPreview) preview else snapshot).formatted(unit, angleUnit)
+                        },
                         fontSize = 26.sp,
                         lineHeight = 32.sp,
                         fontWeight = FontWeight.Medium,
@@ -176,6 +182,10 @@ internal fun MetricCard(
                     )
                 } else if (snapshot.mode == MeasurementMode.ANGLE) {
                     Text("The second point is the vertex", fontSize = 12.sp, color = Muted)
+                }
+                snapshot.segments.forEach { segment ->
+                    Text("${segment.startIndex + 1}–${segment.endIndex + 1}  ${formatDistance(segment.length, unit)}",
+                        fontSize = 12.sp, color = Muted)
                 }
                 if (snapshot.points.isNotEmpty()) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {

@@ -187,7 +187,7 @@ class MeasurementProjectionTest {
     @Test
     fun completedDistanceAndAngleDoNotAppendAnotherPreviewPoint() {
         for (mode in listOf(MeasurementMode.DISTANCE, MeasurementMode.ANGLE)) {
-            val count = mode.maximumPoints!!
+            val count = if (mode == MeasurementMode.DISTANCE) 2 else 3
             val result =
                 projectMeasurement(
                     mode,
@@ -200,6 +200,34 @@ class MeasurementProjectionTest {
             assertEquals(count - 1, result.segments.size)
             assertTrue(result.segments.none { it.isPreview })
         }
+    }
+
+    @Test
+    fun independentDistancePairsNeverDrawAConnectingLineAndPreviewOnlyThePendingPair() {
+        val points = listOf(point(-.8, .5), point(-.2, .5), point(.2, -.5), point(.8, -.5))
+        val complete = projectMeasurement(MeasurementMode.DISTANCE, points, 800, 600)
+        assertEquals(listOf(0, 2), complete.segments.map { it.startIndex })
+        assertEquals(listOf(1, 3), complete.segments.map { it.endIndex })
+        assertEquals(2, complete.segments.size)
+        val preview = projectMeasurement(MeasurementMode.DISTANCE, points.take(3), 800, 600,
+            target = point(.6, -.5), preview = true)
+        assertEquals(listOf(false, true), preview.segments.map { it.isPreview })
+        assertEquals(listOf(0, 2), preview.segments.map { it.startIndex })
+        assertEquals(3, preview.points.size)
+        val moving = projectMeasurement(MeasurementMode.DISTANCE, points, 800, 600,
+            target = point(-.4, .8), preview = true, selectedPointIndex = 1)
+        assertEquals(listOf(true, false), moving.segments.map { it.isPreview })
+    }
+
+    @Test
+    fun clippedSegmentsRetainOriginalIndicesForCorrectLengthLabels() {
+        val points = listOf(point(-3.0, .5), point(-2.0, .5), point(-.5, -.5), point(.5, -.5))
+        val distance = projectMeasurement(MeasurementMode.DISTANCE, points, 800, 600)
+        assertEquals(2, distance.segments.single().startIndex)
+        assertEquals(3, distance.segments.single().endIndex)
+        val path = projectMeasurement(MeasurementMode.PATH, points, 800, 600)
+        assertEquals(listOf(1, 2), path.segments.map { it.startIndex })
+        assertEquals(listOf(2, 3), path.segments.map { it.endIndex })
     }
 
     @Test
@@ -373,6 +401,14 @@ class MeasurementProjectionTest {
             projectMeasurement(MeasurementMode.PATH, listOf(point(0.0), point(0.0)), 800, 600)
                 .isEdgeOn
         )
+    }
+
+    @Test
+    fun edgeOnGuidanceChecksEveryIndependentDistancePair() {
+        val result = projectMeasurement(MeasurementMode.DISTANCE,
+            listOf(point(-.8, .5), point(.8, .5), point(0.0, -.5), point(.001, -.5)), 800, 600)
+        assertTrue(result.isEdgeOn)
+        assertEquals(2, result.segments.size)
     }
 
     @Test

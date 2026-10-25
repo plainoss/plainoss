@@ -1,13 +1,13 @@
 package app.plainoss.arruler.core
 
 enum class MeasurementMode(val label: String, val minimumPoints: Int, val maximumPoints: Int?) {
-    DISTANCE("Distance", 2, 2),
+    DISTANCE("Distance", 2, null),
     PATH("Path", 2, null),
     AREA("Area", 3, null),
     ANGLE("Angle", 3, 3),
 }
 
-/** Value is stored in meters, square meters, or degrees independent of display units. */
+/** Values use meters, square meters, or degrees. For grouped distances, value is the latest pair. */
 data class MeasurementRecord(
     val id: String,
     val timestamp: Long,
@@ -20,7 +20,7 @@ data class MeasurementRecord(
     val hasPhoto: Boolean = false,
 ) {
     val formatted: String
-        get() = formatMeasurement(mode, value, unit, angleUnit)
+        get() = formatMeasurements(mode, points, value, unit, angleUnit)
 }
 
 /** Pure measurement state shared by Android and future iOS presentation layers. */
@@ -34,25 +34,30 @@ data class MeasurementSnapshot(
 
     val isComplete: Boolean
         get() =
-            (mode == MeasurementMode.AREA && areaClosed) ||
+            (mode == MeasurementMode.DISTANCE && points.size >= 2 && points.size % 2 == 0) ||
+                (mode == MeasurementMode.AREA && areaClosed) ||
                 (mode.maximumPoints?.let { points.size >= it } ?: false)
 
     val canCloseArea: Boolean
         get() = mode == MeasurementMode.AREA && isReady && !areaClosed
 
     val canSave: Boolean
-        get() = isReady && (mode != MeasurementMode.AREA || areaClosed)
+        get() = isReady && (mode != MeasurementMode.AREA || areaClosed) &&
+            (mode != MeasurementMode.DISTANCE || points.size % 2 == 0)
 
     val value: Double
         get() =
             if (!isReady) 0.0
             else
                 when (mode) {
-                    MeasurementMode.DISTANCE -> distance3D(points[0], points[1])
+                    MeasurementMode.DISTANCE -> segments.lastOrNull()?.length ?: 0.0
                     MeasurementMode.PATH -> pathLength3D(points)
                     MeasurementMode.AREA -> polygonArea3D(points)
                     MeasurementMode.ANGLE -> angleBetween3D(points[0], points[1], points[2])
                 }
+
+    val segments: List<MeasuredSegment>
+        get() = measuredSegments(mode, points)
 
     val perimeter: Double
         get() = perimeter3D(points)
@@ -60,7 +65,7 @@ data class MeasurementSnapshot(
     fun formatted(
         unit: DistanceUnit = DistanceUnit.METERS,
         angleUnit: AngleUnit = AngleUnit.DEGREES,
-    ): String = formatMeasurement(mode, value, unit, angleUnit)
+    ): String = formatMeasurements(mode, points, value, unit, angleUnit)
 
     fun withMode(mode: MeasurementMode): MeasurementSnapshot =
         if (this.mode == mode) this else MeasurementSnapshot(mode)
@@ -70,7 +75,7 @@ data class MeasurementSnapshot(
         if (!point.isFinite) return this
         val nextPoint = if (snapToGrid) app.plainoss.arruler.core.snapToGrid(point) else point
         return copy(
-            points = if (isComplete) listOf(nextPoint) else points + nextPoint,
+            points = if (isComplete && mode != MeasurementMode.DISTANCE) listOf(nextPoint) else points + nextPoint,
             areaClosed = false,
         )
     }
@@ -95,6 +100,30 @@ data class MeasurementSnapshot(
     fun clear(): MeasurementSnapshot =
         if (points.isEmpty() && !areaClosed) this
         else copy(points = emptyList(), areaClosed = false)
+}
+
+/** Original endpoint indices survive projection clipping, so labels keep the correct world length. */
+data class MeasuredSegment(val startIndex: Int, val endIndex: Int, val length: Double)
+
+fun measuredSegments(mode: MeasurementMode, points: List<Point3D>): List<MeasuredSegment> {
+    if (mode != MeasurementMode.DISTANCE && mode != MeasurementMode.PATH) return emptyList()
+    val step = if (mode == MeasurementMode.DISTANCE) 2 else 1
+    return (0 until points.lastIndex step step).map { index ->
+        MeasuredSegment(index, index + 1, distance3D(points[index], points[index + 1]))
+    }
+}
+
+private fun formatMeasurements(
+    mode: MeasurementMode,
+    points: List<Point3D>,
+    value: Double,
+    unit: DistanceUnit,
+    angleUnit: AngleUnit,
+): String {
+    val distances = if (mode == MeasurementMode.DISTANCE) measuredSegments(mode, points) else emptyList()
+    return if (distances.size > 1) distances.mapIndexed { index, segment ->
+        "${index + 1}: ${formatDistance(segment.length, unit)}"
+    }.joinToString(" · ") else formatMeasurement(mode, value, unit, angleUnit)
 }
 
 private fun formatMeasurement(

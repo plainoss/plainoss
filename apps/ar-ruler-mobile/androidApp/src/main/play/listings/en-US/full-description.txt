@@ -1,10 +1,26 @@
-AR Ruler is a free, open-source tool for estimating distances, path lengths, planar areas and angles using your Android camera.
+Measure your space with your camera.
 
-Place points on a detected surface, adjust them, switch units, and save measurements in local history. Copy or share results using Android's sharing tools.
+AR Ruler is a free, open-source tool for estimating everyday measurements with your Android camera. Place points on a detected surface, adjust them, and keep the results you need.
 
-Camera measurements require a supported ARCore device and Google Play Services for AR. Accuracy depends on lighting, surface texture, tracking and distance. Measurements are estimates and should not be used where precise or safety-critical measurements are required.
+FOUR WAYS TO MEASURE
+• Distance: measure between two points.
+• Path: add up connected segments.
+• Area: trace and close the corners of one flat surface.
+• Angle: place three points, with the middle point as the vertex.
 
-PlainOSS adds no advertising or analytics SDKs. Saved measurement history and preferences stay on your device unless you choose to copy or share them. Google Play Services for AR is provided by Google and has its own data practices.
+LESS CLUTTER, MORE CAMERA
+Keep the result and Save button close at hand. Expand the details when you want to change modes, copy a result or adjust individual points. Undo a step or clear the measurement and start again.
+
+KEEP THE USEFUL NUMBERS
+Save up to 200 measurements in local history. Copy one result or share saved measurements using Android's sharing tools. Switch between meters, centimeters, millimeters, inches, feet and yards; use degrees or radians for angles. Your unit preferences are remembered.
+
+NO ACCOUNT. NO ADS.
+PlainOSS adds no advertising or analytics SDKs. Measurements, history and preferences are stored on your device unless you choose to copy or share them. Camera images are not saved by the app.
+
+BEFORE YOU MEASURE
+A supported ARCore device and Google Play Services for AR are required. Tracking works best with good lighting and textured surfaces. Accuracy varies with the scene, distance and tracking quality. Results are estimates, not a substitute for precision or safety-critical measuring tools.
+
+Google Play Services for AR is provided by Google and has its own data practices. Read the linked privacy policy for details.
 
 OPEN SOURCE
 View the source code, report issues or contribute on GitHub:

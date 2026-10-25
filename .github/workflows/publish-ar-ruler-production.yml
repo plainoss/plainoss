@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       version_code:
-        description: "Version code installed and tested from Play internal testing (confirms device checks passed)"
+        description: "Release installed and tested from Play: version name (e.g. 0.1.7) or code (e.g. 100008)"
         required: true
         type: string
 
@@ -30,7 +30,7 @@ jobs:
       id-token: write
     env:
       GH_TOKEN: ${{ github.token }}
-      VERSION_CODE: ${{ inputs.version_code }}
+      RELEASE_VERSION: ${{ inputs.version_code }}
       VERSION_OFFSET: ${{ vars.ANDROID_VERSION_CODE_OFFSET || '100000' }}
       ANDROID_UPLOAD_CERTIFICATE_SHA256: ${{ vars.ANDROID_UPLOAD_CERTIFICATE_SHA256 }}
     steps:
@@ -43,10 +43,13 @@ jobs:
             echo '::error::Production is paused. Configure android-production and set PLAY_PRODUCTION_ENABLED=true.'
             exit 1
           fi
-          [[ "$VERSION_CODE" =~ ^[1-9][0-9]{0,9}$ ]] || exit 1
-          test -n "$ANDROID_UPLOAD_CERTIFICATE_SHA256"
-      - name: Download and verify the tested internal artifact
-        run: python3 tools/release/production-artifact.py "$VERSION_CODE" release
+          if [[ -z "$ANDROID_UPLOAD_CERTIFICATE_SHA256" ]]; then
+            echo '::error::Missing upload certificate fingerprint in android-production.'
+            exit 1
+          fi
+      - name: Find the selected tested release and verify its original bundle
+        id: candidate
+        run: python3 tools/release/production-artifact.py "$RELEASE_VERSION" release
       - name: Authenticate production publisher using GitHub OIDC
         id: auth
         uses: google-github-actions/auth@v3
@@ -57,11 +60,13 @@ jobs:
           token_format: access_token
           access_token_scopes: https://www.googleapis.com/auth/androidpublisher
       - name: Promote the existing bundle
+        id: promote
         env:
+          VERSION_CODE: ${{ steps.candidate.outputs.version_code }}
           PLAY_ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
         run: |
           python3 tools/release/promote-production.py release "$VERSION_CODE"
       - name: Report recovery instructions
-        if: failure()
+        if: failure() && steps.promote.outcome == 'failure'
         run: |
           echo '::error::Check Play Console before retrying. Rerun this run with the same tested version; do not rebuild or silently select another version.'

@@ -1,10 +1,12 @@
 import hashlib
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
 import tempfile
 import unittest
+import urllib.error
 from unittest.mock import patch
 
 
@@ -129,6 +131,27 @@ class ProductionTest(unittest.TestCase):
         self.assertIn("not proof of public availability", summary.read_text())
 
 
+class PlayErrorTest(unittest.TestCase):
+    def test_first_production_release_explains_console_bootstrap(self):
+        error = urllib.error.HTTPError("https://example.test", 400, "Bad Request", {},
+            io.BytesIO(b'{"error":{"message":"Only releases with status draft may be created on draft app."}}'))
+        with patch.object(production.urllib.request, "urlopen", side_effect=error), patch.dict(
+                os.environ, {"PLAY_ACCESS_TOKEN": "test-token"}):
+            with self.assertRaisesRegex(RuntimeError, "First production release requires Play Console"):
+                production.api("POST", "/edits/test:validate")
+
+
+class VersionSelectionTest(unittest.TestCase):
+    def test_accepts_visible_version_name_or_numeric_code(self):
+        self.assertEqual(artifact.resolve_version("0.1.7", 100001), (100008, "0.1.7"))
+        self.assertEqual(artifact.resolve_version(" 100008 ", 100001), (100008, None))
+
+    def test_rejects_ambiguous_or_invalid_selection(self):
+        for value in ["latest", "", "0.1.0", "0.1.07", "v0.1.7", "-1", "100001", "2100000001"]:
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                artifact.resolve_version(value, 100001)
+
+
 class ArtifactTest(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -138,7 +161,7 @@ class ArtifactTest(unittest.TestCase):
                     "head_repository": {"full_name": "plainoss/plainoss"}, "event": "push",
                     "status": "completed", "conclusion": "success", "head_sha": "tested-commit",
                     "html_url": "https://github.com/plainoss/plainoss/actions/runs/123"}
-        self.metadata = {"applicationId": "app.plainoss.arruler", "versionCode": 100003,
+        self.metadata = {"applicationId": "app.plainoss.arruler", "versionCode": 100003, "versionName": "0.1.2",
                          "commit": "tested-commit", "sha256": hashlib.sha256(b"tested").hexdigest()}
         self.publish_status = "success"
         self.downloads = 0
@@ -191,6 +214,12 @@ class ArtifactTest(unittest.TestCase):
         with patch.dict(os.environ, {"GITHUB_TRIGGERING_ACTOR": "rerun-developer"}):
             self.download()
         self.assertEqual(json.loads((self.directory / "production-source.json").read_text())["actor"], "rerun-developer")
+
+    def test_rejects_version_name_that_does_not_match_original_metadata(self):
+        with patch.object(artifact, "gh", self.gh), patch.dict(os.environ, {
+                "GITHUB_REPOSITORY": "plainoss/plainoss", "VERSION_OFFSET": "100001", "GITHUB_ACTOR": "developer"}):
+            with self.assertRaisesRegex(ValueError, "identity"):
+                artifact.download(100003, self.directory, expected_name="0.1.7")
 
     def test_rejects_wrong_artifact_version(self):
         self.metadata["versionCode"] = 100004

@@ -48,7 +48,7 @@ class MeasurementControlsTest {
         compose.onNodeWithText("Save").assertIsEnabled().performClick()
         compose.onNodeWithText("Path").assertDoesNotExist()
         compose.onNodeWithContentDescription("Copy measurement").assertDoesNotExist()
-        compose.onNodeWithText("Distance  ▾").performClick()
+        compose.onNodeWithText("Distance · Details ▾").performClick()
         compose.onNodeWithContentDescription("Copy measurement").assertIsEnabled().performClick()
         compose.onNodeWithText("Path").performClick()
         compose.runOnIdle {
@@ -56,7 +56,7 @@ class MeasurementControlsTest {
             assertEquals(1, copies)
             assertEquals(MeasurementMode.PATH, selectedMode)
         }
-        compose.onNodeWithText("Distance  ▴").performClick()
+        compose.onNodeWithText("Distance · Hide details ▴").performClick()
         compose.onNodeWithText("Path").assertDoesNotExist()
     }
 

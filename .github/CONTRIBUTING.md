@@ -99,4 +99,4 @@ Examples:
    ```
    For AR Ruler, `pnpm run android:check` runs these checks from the repository root.
 3. Open a Pull Request against `main`. Fill in the PR template completely.
-4. CI will run automated linting, typechecking, and tests. Once approved, the PR will be squash-merged.
+4. CI will run automated linting, typechecking, and tests. Both `Lint, Typecheck & Test` and `Android Build, Lint & Shared Tests` are required before merging, including for auto-merge. Keep your branch up to date with `main`. See the [main branch ruleset](rulesets/README.md) for the recorded configuration and check names. Once approved and all required checks pass, the PR will be squash-merged.

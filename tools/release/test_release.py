@@ -75,6 +75,7 @@ class PlayRetryTest(unittest.TestCase):
         (self.directory / "release.json").write_text(json.dumps(self.metadata))
         self.bundles = []
         self.tracks = []
+        self.production = []
         self.calls = []
         environment = patch.dict(os.environ, {"GITHUB_SHA": "commit", "PLAY_ACCESS_TOKEN": "test", "PLAY_RELEASE_STATUS": "draft"})
         environment.start()
@@ -87,6 +88,8 @@ class PlayRetryTest(unittest.TestCase):
             return Response({"bundles": self.bundles})
         if url.endswith("/tracks"):
             return Response({"tracks": self.tracks})
+        if url.endswith("/tracks/production/releases"):
+            return Response({"releases": self.production})
         return Response({"id": "edit"})
 
     def inspect(self, verify=False):
@@ -125,6 +128,26 @@ class PlayRetryTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "checksum"):
             self.inspect()
         self.assertEqual(self.calls, [])
+
+    def test_internal_upload_cannot_restart_production_review(self):
+        self.production = [{"releaseLifecycleState": "RELEASE_LIFECYCLE_STATE_IN_REVIEW"}]
+        with self.assertRaisesRegex(ValueError, "Production is in review"):
+            self.inspect()
+        self.assertFalse(any(method == "PUT" for method, _ in self.calls))
+
+    def test_orphan_recovery_cannot_restart_production_review(self):
+        self.bundles = [{"versionCode": 100002, "sha256": self.checksum}]
+        self.production = [{"releaseLifecycleState": "RELEASE_LIFECYCLE_STATE_IN_REVIEW"}]
+        with self.assertRaisesRegex(ValueError, "Production is in review"):
+            self.inspect()
+        self.assertFalse(any(method == "PUT" for method, _ in self.calls))
+
+    def test_noop_internal_retry_can_verify_during_production_review(self):
+        self.bundles = [{"versionCode": 100002, "sha256": self.checksum}]
+        self.tracks = [{"track": "internal", "releases": [{"versionCodes": ["100002"], "status": "draft"}]}]
+        self.production = [{"releaseLifecycleState": "RELEASE_LIFECYCLE_STATE_IN_REVIEW"}]
+        self.inspect()
+        self.assertFalse(any(method == "PUT" for method, _ in self.calls))
 
 
 if __name__ == "__main__":

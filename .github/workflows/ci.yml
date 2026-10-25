@@ -11,6 +11,8 @@ permissions:
   contents: read
 
 jobs:
+  # These job names are required by .github/rulesets/main.json; update the live
+  # ruleset together with any rename, and keep PR triggers free of path filters.
   verify:
     name: Lint, Typecheck & Test
     runs-on: ubuntu-latest

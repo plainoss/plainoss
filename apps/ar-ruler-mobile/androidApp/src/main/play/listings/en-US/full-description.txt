@@ -25,7 +25,3 @@ Google Play Services for AR is provided by Google and has its own data practices
 OPEN SOURCE
 View the source code, report issues or contribute on GitHub:
 https://github.com/plainoss/plainoss
-
-OPEN SOURCE
-View the source code, report issues or contribute on GitHub:
-https://github.com/plainoss/plainoss

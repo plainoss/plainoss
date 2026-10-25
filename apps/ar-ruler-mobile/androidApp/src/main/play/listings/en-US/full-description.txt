@@ -5,3 +5,7 @@ Place points on a detected surface, adjust them, switch units, and save measurem
 Camera measurements require a supported ARCore device and Google Play Services for AR. Accuracy depends on lighting, surface texture, tracking and distance. Measurements are estimates and should not be used where precise or safety-critical measurements are required.
 
 PlainOSS adds no advertising or analytics SDKs. Saved measurement history and preferences stay on your device unless you choose to copy or share them. Google Play Services for AR is provided by Google and has its own data practices.
+
+OPEN SOURCE
+View the source code, report issues or contribute on GitHub:
+https://github.com/plainoss/plainoss

@@ -40,6 +40,9 @@ jobs:
       - name: Run Unit Tests
         run: pnpm run test
 
+      - name: Test Android release verification and retry logic
+        run: python3 -m unittest discover -s tools/release -p 'test_*.py'
+
       - name: Build Packages & Apps
         run: pnpm run build
 
@@ -72,6 +75,27 @@ jobs:
       - name: Verify Android app and shared core
         run: ./gradlew :shared:jvmTest :androidApp:lintDebug :androidApp:assembleDebug
 
+      - name: Check release bundle with an ephemeral key (no repository secrets)
+        working-directory: .
+        shell: bash
+        run: |
+          export ANDROID_KEYSTORE_PATH="$RUNNER_TEMP/release-check.jks"
+          export ANDROID_KEYSTORE_PASSWORD="$(openssl rand -hex 24)"
+          export ANDROID_KEY_PASSWORD="$ANDROID_KEYSTORE_PASSWORD"
+          export ANDROID_KEY_ALIAS=release-check
+          export ANDROID_VERSION_CODE=1
+          export ANDROID_VERSION_NAME=0.1.0-check
+          echo "::add-mask::$ANDROID_KEYSTORE_PASSWORD"
+          trap 'rm -f "$ANDROID_KEYSTORE_PATH"' EXIT
+          "$JAVA_HOME/bin/keytool" -genkeypair -keystore "$ANDROID_KEYSTORE_PATH" \
+            -storetype JKS -alias "$ANDROID_KEY_ALIAS" -keyalg RSA -keysize 3072 \
+            -validity 2 -dname 'CN=Disposable CI Release Check' \
+            -storepass:env ANDROID_KEYSTORE_PASSWORD -keypass:env ANDROID_KEY_PASSWORD
+          export ANDROID_UPLOAD_CERTIFICATE_SHA256="$("$JAVA_HOME/bin/keytool" -exportcert \
+            -keystore "$ANDROID_KEYSTORE_PATH" -alias "$ANDROID_KEY_ALIAS" \
+            -storepass:env ANDROID_KEYSTORE_PASSWORD | sha256sum | cut -d ' ' -f 1)"
+          bash tools/release/build.sh "$GITHUB_WORKSPACE/release-check"
+
       - name: Upload installable debug APK
         uses: actions/upload-artifact@v7
         with:
@@ -89,4 +113,6 @@ jobs:
           path: |
             apps/ar-ruler-mobile/shared/build/reports/
             apps/ar-ruler-mobile/androidApp/build/reports/
+            release-check/verification.txt
+            release-check/release.json
           if-no-files-found: ignore

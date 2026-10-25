@@ -1,0 +1,175 @@
+name: AR Ruler Internal Release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/ar-ruler-mobile/**"
+      - "tools/release/**"
+      - ".github/workflows/publish-ar-ruler-internal.yml"
+      - ".github/workflows/ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+# Both build and publishing are serialized. Reruns keep their original run number
+# and reuse the immutable artifact from the first successful build attempt.
+concurrency:
+  group: play-app-plainoss-arruler
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    environment: android-release
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION_OFFSET: ${{ vars.ANDROID_VERSION_CODE_OFFSET || '100000' }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Reject a superseded source commit
+        run: test "$(gh api repos/$GITHUB_REPOSITORY/git/ref/heads/main --jq .object.sha)" = "$GITHUB_SHA"
+      - name: Reuse this run's verified bundle after a retry
+        id: artifact
+        shell: bash
+        run: |
+          count=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts" \
+            --jq "[.artifacts[] | select(.name == \"ar-ruler-release-$GITHUB_RUN_ID\" and .expired == false)] | length")
+          if [[ "$count" != 0 ]]; then
+            gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+              --name "ar-ruler-release-$GITHUB_RUN_ID" --dir release
+            (cd release && sha256sum --check SHA256SUMS)
+            python3 -c 'import json,os; assert json.load(open("release/release.json"))["commit"] == os.environ["GITHUB_SHA"]'
+            echo 'reused=true' >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-node@v7
+        if: steps.artifact.outputs.reused != 'true'
+        with:
+          node-version: 22
+      - uses: pnpm/action-setup@v6
+        if: steps.artifact.outputs.reused != 'true'
+        with:
+          version: 10.13.1
+      - name: Verify repository
+        if: steps.artifact.outputs.reused != 'true'
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm run format:check
+          pnpm run typecheck
+          pnpm run test
+          pnpm run build
+          python3 -m unittest discover -s tools/release -p 'test_*.py'
+      - uses: actions/setup-java@v5
+        if: steps.artifact.outputs.reused != 'true'
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+        if: steps.artifact.outputs.reused != 'true'
+        with:
+          packages: "platform-tools platforms;android-36 build-tools;35.0.0"
+          log-accepted-android-sdk-licenses: false
+      - uses: gradle/actions/setup-gradle@v4
+        if: steps.artifact.outputs.reused != 'true'
+        with:
+          cache-disabled: true
+      - name: Build and verify signed release without Play credentials
+        if: steps.artifact.outputs.reused != 'true'
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_UPLOAD_CERTIFICATE_SHA256: ${{ vars.ANDROID_UPLOAD_CERTIFICATE_SHA256 }}
+        shell: bash
+        run: |
+          [[ "$VERSION_OFFSET" =~ ^[0-9]+$ ]] || exit 1
+          export ANDROID_VERSION_CODE=$((10#$VERSION_OFFSET + GITHUB_RUN_NUMBER))
+          export ANDROID_VERSION_NAME="0.1.$GITHUB_RUN_NUMBER"
+          export ANDROID_KEYSTORE_PATH="$RUNNER_TEMP/ar-ruler-upload.jks"
+          trap 'rm -f "$ANDROID_KEYSTORE_PATH"' EXIT
+          umask 077
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$ANDROID_KEYSTORE_PATH"
+          bash tools/release/build.sh "$GITHUB_WORKSPACE/release"
+      - uses: actions/upload-artifact@v7
+        if: steps.artifact.outputs.reused != 'true'
+        with:
+          name: ar-ruler-release-${{ github.run_id }}
+          path: release/
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 0
+      - name: Record verified candidate
+        run: |
+          echo '### Verified release candidate' >> "$GITHUB_STEP_SUMMARY"
+          cat release/release.json >> "$GITHUB_STEP_SUMMARY"
+          echo 'Publishing remains paused unless PLAY_INTERNAL_ENABLED is true.' >> "$GITHUB_STEP_SUMMARY"
+
+  publish:
+    needs: build
+    if: github.ref == 'refs/heads/main' && vars.PLAY_INTERNAL_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: android-release
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PLAY_RELEASE_STATUS: ${{ vars.PLAY_RELEASE_STATUS || 'draft' }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Fetch and verify immutable release artifact
+        run: |
+          gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --name "ar-ruler-release-$GITHUB_RUN_ID" --dir release
+          (cd release && sha256sum --check SHA256SUMS)
+          test "$(gh api repos/$GITHUB_REPOSITORY/git/ref/heads/main --jq .object.sha)" = "$GITHUB_SHA"
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: "platform-tools platforms;android-36 build-tools;35.0.0"
+          log-accepted-android-sdk-licenses: false
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-disabled: true
+      - name: Authenticate using GitHub OIDC
+        id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.PLAY_SERVICE_ACCOUNT }}
+          create_credentials_file: true
+          token_format: access_token
+          access_token_scopes: https://www.googleapis.com/auth/androidpublisher
+      - name: Reconcile any previous upload
+        id: play
+        env:
+          PLAY_ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
+        run: python3 tools/release/play-state.py release
+      - name: Upload the verified bundle to internal
+        if: steps.play.outputs.state == 'upload'
+        working-directory: apps/ar-ruler-mobile
+        run: |
+          test "$(gh api repos/$GITHUB_REPOSITORY/git/ref/heads/main --jq .object.sha)" = "$GITHUB_SHA"
+          ./gradlew --no-daemon --no-configuration-cache :androidApp:publishReleaseBundle --artifact-dir "$GITHUB_WORKSPACE/release"
+      - name: Verify the committed internal release
+        env:
+          PLAY_ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
+        run: python3 tools/release/play-state.py release --verify
+      - name: Record submission
+        run: |
+          echo '### Internal release submitted' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Play track state was verified. Submission does not establish installation or production availability.' >> "$GITHUB_STEP_SUMMARY"
+          cat release/release.json >> "$GITHUB_STEP_SUMMARY"
+      - name: Report failure
+        if: failure()
+        run: echo '::error::Internal publishing failed. Inspect this run before retrying; rerun this same run to retain its bundle and version.'

@@ -21,6 +21,8 @@ local.properties
 /apps/mobile-ar-ruler/
 *.orig.*
 *.jks
+*.keystore
+gha-creds-*.json
 *.p8
 *.p12
 *.key
@@ -38,6 +40,9 @@ pnpm-debug.log*
 .env*.local
 .env.production
 .env.staging
+.release/
+__pycache__/
+*.pyc
 
 # OS & IDE
 .DS_Store

@@ -4,6 +4,20 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.play.publisher)
+}
+
+val releaseCode = providers.environmentVariable("ANDROID_VERSION_CODE").orElse("1").get().toInt()
+require(releaseCode in 1..2100000000) { "ANDROID_VERSION_CODE must be between 1 and 2100000000" }
+val releaseName = providers.environmentVariable("ANDROID_VERSION_NAME").orElse("0.1.0").get()
+require(releaseName.isNotBlank()) { "ANDROID_VERSION_NAME must not be blank" }
+val signingVariables = listOf("ANDROID_KEYSTORE_PATH", "ANDROID_KEYSTORE_PASSWORD", "ANDROID_KEY_ALIAS", "ANDROID_KEY_PASSWORD")
+val signingValues = signingVariables.associateWith { providers.environmentVariable(it).orNull }
+val hasReleaseSigning = signingValues.values.all { !it.isNullOrBlank() }
+val validateReleaseCredentials by tasks.registering {
+    doLast {
+        check(hasReleaseSigning) { "Release signing requires: ${signingVariables.joinToString()}" }
+    }
 }
 
 android {
@@ -14,8 +28,19 @@ android {
         applicationId = "app.plainoss.arruler"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = releaseCode
+        versionName = releaseName
+    }
+
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("upload") {
+                storeFile = file(signingValues.getValue("ANDROID_KEYSTORE_PATH")!!)
+                storePassword = signingValues.getValue("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias = signingValues.getValue("ANDROID_KEY_ALIAS")
+                keyPassword = signingValues.getValue("ANDROID_KEY_PASSWORD")
+            }
+        }
     }
 
     buildFeatures {
@@ -38,8 +63,26 @@ android {
         }
         release {
             isMinifyEnabled = false
+            if (hasReleaseSigning) signingConfig = signingConfigs.getByName("upload")
+            ndk.debugSymbolLevel = "FULL"
         }
     }
+}
+
+tasks.matching { it.name == "preReleaseBuild" }.configureEach {
+    dependsOn(validateReleaseCredentials)
+}
+
+play {
+    useApplicationDefaultCredentials.set(true)
+    defaultToAppBundles.set(true)
+    track.set("internal")
+    // New apps may need draft releases until their Console setup is complete.
+    releaseStatus.set(
+        providers.environmentVariable("PLAY_RELEASE_STATUS").orElse("completed").map {
+            com.github.triplet.gradle.androidpublisher.ReleaseStatus.valueOf(it.uppercase())
+        }
+    )
 }
 
 kotlin {

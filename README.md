@@ -73,6 +73,10 @@ See [.agents/TOOL_BLUEPRINT.md](.agents/TOOL_BLUEPRINT.md) for the exact step-by
 
 The scaffolder creates a TypeScript core, web app, and Kotlin Multiplatform project in `apps/<tool>-mobile`. Each native Gradle project builds independently of pnpm/Turbo. Open its directory in Android Studio, or run its checked-in Gradle wrapper to test `shared` and build `androidApp`. The root `android:*` commands are shortcuts for AR Ruler; see its [README](apps/ar-ruler-mobile/README.md) for setup and device testing.
 
+## Android releases
+
+AR Ruler uses the permanent Play application ID `app.plainoss.arruler`. Pull requests verify release bundles with disposable signing keys. The trusted **AR Ruler Internal Release** workflow builds signed bundles on Android changes merged to `main`; Play uploads use GitHub OIDC and remain paused until Console bootstrap is complete. See [Android release setup and recovery](docs/android-releases.md). Production automation is deferred until Play installation, upgrade and physical-device validation succeed.
+
 ## License
 
 [MIT](LICENSE)

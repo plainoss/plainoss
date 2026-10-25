@@ -1,0 +1,1 @@
+Initial AR Ruler internal test: camera measurements for distance, paths, areas and angles; editable points; local measurement history; unit conversion; and a practice canvas.

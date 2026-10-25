@@ -35,6 +35,9 @@ The native project also works without Node or pnpm:
 cd apps/ar-ruler-mobile
 ./gradlew :shared:jvmTest :androidApp:lintDebug :androidApp:assembleDebug
 ./gradlew :androidApp:installDebug
+
+# Compact/expanded controls, point editing, and area-closing UI tests on an emulator/device
+./gradlew :androidApp:connectedDebugAndroidTest
 ```
 
 On Windows, use `gradlew.bat` for the equivalent commands. The debug APK is written to `androidApp/build/outputs/apk/debug/androidApp-debug.apk`. The release application ID is `app.plainoss.arruler`; debug builds use `app.plainoss.arruler.debug` so they can coexist with a release; Android 8.0 (API 26) or newer is required.
@@ -63,9 +66,11 @@ The output directory must be outside tracked source directories. Release builds 
 
 1. Launch the app and allow camera access. If prompted, install or update Google Play Services for AR, then return to the app.
 2. Slowly move the phone over a well-lit, textured surface until the aim indicator finds a point.
-3. Choose Distance, Path, Area, or Angle. Aim at each point and press **+** to place it. Distance takes two points; Path connects a series of points; Angle uses three points with the second point as its vertex. For Area, place at least three corners in order on one flat surface, then tap the first point or **Close area**. A translucent fill shows the polygon. After closing, **+** starts a new area.
-4. In every mode, tap a placed point or its number in **Move point** to select it, including points outside the camera view. Aim at its new position and tap **Move**. Tap **Cancel**, the selected number, or Back to cancel. Moving a corner keeps a closed area closed. Undo reopens a closed area before removing corners; otherwise it removes the last point. Clear starts over.
-5. Change units without remeasuring. Save a completed measurement to local history, copy its value, or send it through the Android sharesheet.
+3. Tap the compact measurement result to expand details and choose Distance, Path, Area, or Angle. Aim at each point and press **+** to place it. Distance takes two points; Path connects a series of points; Angle uses three points with the second point as its vertex. For Area, place at least three corners in order on one flat surface, then tap the first point or **Close area**. A translucent fill shows the polygon. After closing, **+** starts a new area.
+4. In every mode, tap a placed point or expand details and tap its number in **Move point**, including points outside the camera view. Selecting a point collapses details so you can aim at its new position and tap **Move**. Tap **Cancel**, the selected point, or Back to cancel. Moving a corner keeps a closed area closed. Undo reopens a closed area before removing corners; otherwise it removes the last point. Clear starts over.
+5. Change units without remeasuring. Save stays visible in the compact panel; expand details to copy a completed measurement. Share saved measurements from history through the Android sharesheet. Tap the result again or press Back to collapse details.
+
+Measurement details start collapsed, leaving more camera view visible. The original circular **+**, Undo and Clear controls float directly over the camera without a shared card background. The compact result panel is translucent; guidance and tracking warnings appear inside it instead of a large persistent camera overlay. Expanded details scroll on short displays.
 
 Release builds provide camera measurements only and require an ARCore-supported camera device. The developer practice canvas, presets and grid snapping are available only in debug builds for development and automated testing; they are hidden from release settings, recovery screens and help.
 

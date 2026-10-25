@@ -80,11 +80,11 @@ fun RulerApp(
         var practiceTarget by remember { mutableStateOf(Point3D(0.0, 0.0, 0.0)) }
         var snap by rememberSaveable { mutableStateOf(true) }
         var sheet by rememberSaveable { mutableStateOf<String?>(null) }
+        var detailsExpanded by rememberSaveable { mutableStateOf(false) }
         var showClearHistory by remember { mutableStateOf(false) }
         var viewportSize by remember { mutableStateOf(IntSize.Zero) }
         var cameraTop by remember { mutableFloatStateOf(0f) }
         var cameraBottom by remember { mutableFloatStateOf(Float.MAX_VALUE) }
-        var instructionTop by remember { mutableFloatStateOf(Float.MAX_VALUE) }
         var permissionAttempted by remember { mutableStateOf(store.permissionAsked) }
         val permission =
             rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted
@@ -132,13 +132,6 @@ fun RulerApp(
         val hasPreview = preview != snapshot
         val viewportScaleY =
             if (viewportSize.height > 0) frame.height.toDouble() / viewportSize.height else 1.0
-        val portraitGuidanceVisible =
-            viewportSize.height >= viewportSize.width &&
-                cameraGranted &&
-                cameraError == null &&
-                !practice
-        val unobscuredBottom =
-            if (portraitGuidanceVisible) minOf(cameraBottom, instructionTop) else cameraBottom
         // Draw across the full camera viewport, beneath the UI. The exposed camera area is only
         // for guidance, hit testing, and readable label placement; it never shortens drawn lines.
         val viewingArea =
@@ -146,7 +139,7 @@ fun RulerApp(
                 0.0,
                 cameraTop * viewportScaleY,
                 frame.width.toDouble(),
-                minOf(unobscuredBottom * viewportScaleY, frame.height.toDouble()),
+                minOf(cameraBottom * viewportScaleY, frame.height.toDouble()),
             )
         val minimumLineLength = with(LocalDensity.current) { 6.dp.toPx().toDouble() }
         val overlayProjection =
@@ -212,6 +205,7 @@ fun RulerApp(
         }
         val changeMode: (MeasurementMode) -> Unit = { selected ->
             if (selected != mode) {
+                detailsExpanded = false
                 mode = selected
                 controller.mode = selected
                 controller.clear()
@@ -235,6 +229,7 @@ fun RulerApp(
             if (practice) practiceSelectedPoint = null else controller.requestCancelSelection()
         }
         val selectPoint: (Int) -> Unit = { index ->
+            detailsExpanded = false
             if (selectedPoint == index) cancelMove()
             else {
                 if (practice) {
@@ -274,8 +269,9 @@ fun RulerApp(
                 notify("Saved ${record.formatted}")
             }
         }
-        BackHandler(sheet == null && snapshot.points.isNotEmpty()) {
+        BackHandler(sheet == null && (detailsExpanded || snapshot.points.isNotEmpty())) {
             if (selectedPoint != null) cancelMove()
+            else if (detailsExpanded) detailsExpanded = false
             else if (practice) practiceSnapshot = practiceSnapshot.undo() else controller.undo()
         }
 
@@ -283,6 +279,15 @@ fun RulerApp(
             Modifier.fillMaxSize().background(Ink).onSizeChanged { viewportSize = it }
         ) {
             val landscape = maxWidth > maxHeight
+            val insets = WindowInsets.safeDrawing.asPaddingValues()
+            val detailsMaxHeight =
+                (maxHeight - (if (landscape) 220.dp else 300.dp) -
+                    insets.calculateTopPadding() - insets.calculateBottomPadding())
+                    .coerceIn(48.dp, 240.dp)
+            val guidance =
+                if (practice) {
+                    if (snapshot.points.isEmpty()) "Tap the grid to place a point" else null
+                } else if (!snapshot.canSave) instruction(snapshot, frame) else null
             // Keep the same SurfaceView attached while practice mode pauses its camera.
             if (cameraGranted)
                 AndroidView(
@@ -459,26 +464,6 @@ fun RulerApp(
                                 }
                             }
                         }
-                    } else if (!landscape) {
-                        Text(
-                            text =
-                                if (practice)
-                                    if (selectedPoint != null)
-                                        "Tap the grid to move point ${selectedPoint + 1}"
-                                    else "Tap the grid to place a point"
-                                else
-                                    measurementNotice?.takeIf { canMeasure }
-                                        ?: instruction(snapshot, frame),
-                            color = Color.White,
-                            textAlign = TextAlign.Center,
-                            modifier =
-                                Modifier.align(Alignment.BottomCenter)
-                                    .onGloballyPositioned { instructionTop = it.boundsInRoot().top }
-                                    .padding(24.dp)
-                                    .background(Ink.copy(alpha = .8f), RoundedCornerShape(16.dp))
-                                    .padding(12.dp),
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
                     }
                 }
                 if (landscape) {
@@ -499,15 +484,19 @@ fun RulerApp(
                             save,
                             closeArea,
                             Modifier.weight(1f),
-                            notice = if (landscape || !canMeasure) measurementNotice else null,
+                            notice = measurementNotice,
                             selectedPoint = selectedPoint,
                             practice = practice,
                             selectPoint = selectPoint,
                             cancelMove = cancelMove,
+                            expanded = detailsExpanded,
+                            toggleExpanded = { detailsExpanded = !detailsExpanded },
+                            onModeChange = changeMode,
+                            guidance = guidance,
+                            detailsMaxHeight = detailsMaxHeight,
                         )
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.widthIn(max = 310.dp)) {
-                            ModeSelector(mode, changeMode)
                             CaptureRow(
                                 snapshot,
                                 canMeasure && target != null,
@@ -548,14 +537,18 @@ fun RulerApp(
                             { copy(snapshot.formatted(unit, angleUnit)) },
                             save,
                             closeArea,
-                            notice = if (landscape || !canMeasure) measurementNotice else null,
+                            notice = measurementNotice,
                             selectedPoint = selectedPoint,
                             practice = practice,
                             selectPoint = selectPoint,
                             cancelMove = cancelMove,
+                            expanded = detailsExpanded,
+                            toggleExpanded = { detailsExpanded = !detailsExpanded },
+                            onModeChange = changeMode,
+                            guidance = guidance,
+                            detailsMaxHeight = detailsMaxHeight,
                         )
-                        Spacer(Modifier.height(12.dp))
-                        ModeSelector(mode, changeMode)
+                        Spacer(Modifier.height(8.dp))
                         CaptureRow(
                             snapshot,
                             canMeasure && target != null,

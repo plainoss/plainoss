@@ -634,6 +634,18 @@ fun RulerApp(
                                 .verticalScroll(rememberScrollState())
                         ) {
                             SheetTitle("Make it yours", "Simple tools. Nothing extra.")
+                            Text(
+                                "Camera measurements use Google Play Services for AR (ARCore), provided by Google. Google's Privacy Policy governs that service.",
+                                color = Muted,
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            TextButton(onClick = {
+                                context.startActivity(Intent(Intent.ACTION_VIEW, "https://policies.google.com/privacy".toUri()))
+                            }) { Text("Google Privacy Policy") }
+                            TextButton(onClick = {
+                                context.startActivity(Intent(Intent.ACTION_VIEW, "https://github.com/plainoss/plainoss/blob/main/docs/ar-ruler-privacy.md".toUri()))
+                            }) { Text("AR Ruler privacy policy") }
+                            HorizontalDivider(Modifier.padding(vertical = 16.dp))
                             Row(
                                 Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically,

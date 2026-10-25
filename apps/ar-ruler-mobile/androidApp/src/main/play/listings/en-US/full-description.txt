@@ -1,0 +1,9 @@
+AR Ruler is a free, open-source tool for estimating distances, path lengths, planar areas and angles using your Android camera.
+
+Place points on a detected surface, adjust them, switch units, and save measurements in local history. Copy or share results using Android's sharing tools.
+
+The practice canvas lets you explore measurement modes using a grid and sample shapes, including on devices without supported AR hardware.
+
+Camera measurements require a supported ARCore device and Google Play Services for AR. Accuracy depends on lighting, surface texture, tracking and distance. Measurements are estimates and should not be used where precise or safety-critical measurements are required.
+
+PlainOSS adds no advertising or analytics SDKs. Saved measurement history and preferences stay on your device unless you choose to copy or share them. Google Play Services for AR is provided by Google and has its own data practices.

@@ -313,8 +313,31 @@ internal fun SmallAction(description: String, icon: String, onClick: () -> Unit)
 
 @Composable
 internal fun SheetTitle(title: String, subtitle: String) {
-    Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+    Text(
+        title,
+        style = MaterialTheme.typography.headlineSmall,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurface,
+    )
     Text(subtitle, color = Muted, modifier = Modifier.padding(top = 6.dp, bottom = 20.dp))
+}
+
+@Composable
+internal fun MeasurementUnitsSheet(unit: DistanceUnit, onSelect: (DistanceUnit) -> Unit) {
+    Column(Modifier.padding(24.dp).verticalScroll(rememberScrollState())) {
+        SheetTitle("Measurement units", "Your choice is saved for next time.")
+        DistanceUnit.entries.forEach { candidate ->
+            ListItem(
+                headlineContent = { Text(unitName(candidate)) },
+                supportingContent = { Text(candidate.symbol) },
+                leadingContent = { RadioButton(selected = candidate == unit, onClick = null) },
+                modifier = Modifier.clip(RoundedCornerShape(16.dp))
+                    .semantics { selected = candidate == unit }
+                    .clickable(role = Role.RadioButton) { onSelect(candidate) },
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            )
+        }
+    }
 }
 
 internal fun unitName(unit: DistanceUnit): String =

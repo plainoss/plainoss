@@ -14,8 +14,8 @@
     <text x="64" y="253" font-size="29" fill="#d3f88b">Measure your space.</text>
     <text x="64" y="299" font-size="19" fill="#b4c4b8">Distance · Path · Area · Angle</text>
     <path d="M64 345H440" stroke="#344636"/>
-    <text x="64" y="381" font-size="17" fill="#b4c4b8">Camera measurements. Local history.</text>
-    <text x="64" y="410" font-size="17" fill="#b4c4b8">Save, copy and share results.</text>
+    <text x="64" y="381" font-size="17" fill="#b4c4b8">Point. Measure. Save.</text>
+    <text x="64" y="410" font-size="17" fill="#b4c4b8">Your measurements, close at hand.</text>
   </g>
   <path d="M655 113L938 167L883 383L600 329Z" fill="#d3f88b" fill-opacity="0.07" stroke="#d3f88b" stroke-width="3"/>
   <g fill="#d3f88b" stroke="#0e1510" stroke-width="6">

@@ -587,6 +587,7 @@ fun RulerApp(
                 onDismissRequest = { sheet = null },
                 sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
                 containerColor = Panel,
+                contentColor = MaterialTheme.colorScheme.onSurface,
             ) {
                 when (sheet) {
                     "history" ->
@@ -600,31 +601,11 @@ fun RulerApp(
                             },
                             onClear = { showClearHistory = true },
                         )
-                    "units" ->
-                        Column(Modifier.padding(24.dp).verticalScroll(rememberScrollState())) {
-                            SheetTitle("Measurement units", "Your choice is saved for next time.")
-                            DistanceUnit.entries.forEach { candidate ->
-                                ListItem(
-                                    headlineContent = { Text(unitName(candidate)) },
-                                    supportingContent = { Text(candidate.symbol) },
-                                    leadingContent = {
-                                        RadioButton(selected = candidate == unit, onClick = null)
-                                    },
-                                    modifier =
-                                        Modifier.clip(RoundedCornerShape(16.dp))
-                                            .semantics {
-                                                selected = candidate == unit
-                                            }
-                                            .clickable(role = Role.RadioButton) {
-                                                unit = candidate
-                                                store.unit = candidate
-                                                sheet = null
-                                            },
-                                    colors =
-                                        ListItemDefaults.colors(containerColor = Color.Transparent),
-                                )
-                            }
-                        }
+                    "units" -> MeasurementUnitsSheet(unit) { selected ->
+                        unit = selected
+                        store.unit = selected
+                        sheet = null
+                    }
                     else ->
                         Column(
                             Modifier.padding(horizontal = 24.dp)

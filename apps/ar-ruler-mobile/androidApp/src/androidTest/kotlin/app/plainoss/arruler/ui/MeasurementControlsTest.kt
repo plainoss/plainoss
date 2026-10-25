@@ -1,6 +1,14 @@
 package app.plainoss.arruler.ui
 
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Column
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toPixelMap
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -17,6 +25,7 @@ import app.plainoss.arruler.core.MeasurementMode
 import app.plainoss.arruler.core.MeasurementSnapshot
 import app.plainoss.arruler.core.Point3D
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
@@ -26,6 +35,27 @@ class MeasurementControlsTest {
     private val distance = MeasurementSnapshot(
         points = listOf(Point3D(0.0, 0.0, 0.0), Point3D(1.0, 0.0, 0.0))
     )
+
+    @Test
+    fun sheetHeadingRemainsReadableWhenParentContentColorIsBlack() {
+        compose.setContent {
+            MaterialTheme(colorScheme = RulerColors) {
+                CompositionLocalProvider(LocalContentColor provides Color.Black) {
+                    Column(Modifier.background(Panel)) {
+                        SheetTitle("Your measurements", "Saved on this device")
+                    }
+                }
+            }
+        }
+        val pixels = compose.onNodeWithText("Your measurements").captureToImage().toPixelMap()
+        val hasReadableText = (0 until pixels.height).any { y ->
+            (0 until pixels.width).any { x ->
+                val pixel = pixels[x, y]
+                pixel.red > .8f && pixel.green > .8f && pixel.blue > .8f
+            }
+        }
+        assertTrue("Heading must render light text on the dark panel", hasReadableText)
+    }
 
     @Test
     fun compactResultKeepsSaveVisibleAndRevealsModesAndCopyOnTap() {

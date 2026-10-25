@@ -87,6 +87,12 @@ def verify(args):
             raise ValueError(f"Unexpected manifest value for {attribute}")
     if manifest.find("application").get(android + "debuggable") == "true":
         raise ValueError("Release bundle is debuggable")
+    features = {item.get(android + "name"): item.get(android + "required", "true") for item in manifest.findall("uses-feature")}
+    if features.get("android.hardware.camera.ar") != "true" or features.get("android.hardware.camera") != "true":
+        raise ValueError("Release must require an ARCore-supported camera device")
+    metadata = {item.get(android + "name"): item.get(android + "value") for item in manifest.find("application").findall("meta-data")}
+    if metadata.get("com.google.ar.core") != "required":
+        raise ValueError("Release must require Google Play Services for AR")
     native = []
     with zipfile.ZipFile(bundle) as archive:
         for name in archive.namelist():

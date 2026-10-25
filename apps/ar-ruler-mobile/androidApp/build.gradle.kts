@@ -30,6 +30,8 @@ android {
         targetSdk = 36
         versionCode = releaseCode
         versionName = releaseName
+        manifestPlaceholders["arCoreRequired"] = "true"
+        manifestPlaceholders["arCoreMode"] = "required"
     }
 
     signingConfigs {
@@ -45,6 +47,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     compileOptions {
@@ -60,6 +63,8 @@ android {
         debug {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
+            manifestPlaceholders["arCoreRequired"] = "false"
+            manifestPlaceholders["arCoreMode"] = "optional"
         }
         release {
             isMinifyEnabled = false

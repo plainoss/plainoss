@@ -6,7 +6,7 @@ This policy covers the PlainOSS Android app **AR Ruler**, application ID `app.pl
 
 ## Camera and augmented reality
 
-AR Ruler requests camera access to estimate measurements using augmented reality. Its app code does not record or save camera images or videos, or send them to PlainOSS. You can revoke camera permission in Android settings. The practice canvas works without camera permission.
+AR Ruler requests camera access to estimate measurements using augmented reality. Its app code does not record or save camera images or videos, or send them to PlainOSS. You can revoke camera permission in Android settings.
 
 Camera measurements use **Google Play Services for AR (ARCore)**, provided by Google. Google's service has its own collection and processing practices, governed by the [Google Privacy Policy](https://policies.google.com/privacy). See [how Google Play Services for AR handles data](https://support.google.com/ar?p=how-google-play-services-for-ar-handles-your-data). This app does not enable ARCore Cloud Anchors or the Geospatial API.
 
@@ -26,4 +26,4 @@ AR Ruler does not require an app account. PlainOSS includes no advertising or an
 
 ## Contact and updates
 
-Contact the PlainOSS maintainers through the [project issue tracker](https://github.com/plainoss/plainoss/issues). Do not post private measurements or other sensitive information in public issues. Changes to this policy will be published at this URL with an updated effective date.
+Contact the PlainOSS maintainers at [help@plainoss.app](mailto:help@plainoss.app) or through the [project issue tracker](https://github.com/plainoss/plainoss/issues). Do not post private measurements or other sensitive information in public issues. Changes to this policy will be published at this URL with an updated effective date.

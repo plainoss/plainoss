@@ -62,10 +62,10 @@ The output directory must be outside tracked source directories. Release builds 
 1. Launch the app and allow camera access. If prompted, install or update Google Play Services for AR, then return to the app.
 2. Slowly move the phone over a well-lit, textured surface until the aim indicator finds a point.
 3. Choose Distance, Path, Area, or Angle. Aim at each point and press **+** to place it. Distance takes two points; Path connects a series of points; Angle uses three points with the second point as its vertex. For Area, place at least three corners in order on one flat surface, then tap the first point or **Close area**. A translucent fill shows the polygon. After closing, **+** starts a new area.
-4. In every mode, tap a placed point or its number in **Move point** to select it, including points outside the camera view. Aim at its new position and tap **Move**. Tap **Cancel**, the selected number, or Back to cancel. In the practice canvas, select a point and tap its new grid position. Moving a corner keeps a closed area closed. Undo reopens a closed area before removing corners; otherwise it removes the last point. Clear starts over.
+4. In every mode, tap a placed point or its number in **Move point** to select it, including points outside the camera view. Aim at its new position and tap **Move**. Tap **Cancel**, the selected number, or Back to cancel. Moving a corner keeps a closed area closed. Undo reopens a closed area before removing corners; otherwise it removes the last point. Clear starts over.
 5. Change units without remeasuring. Save a completed measurement to local history, copy its value, or send it through the Android sharesheet.
 
-The Practice canvas is available from settings and recovery screens, including on devices without AR support. Tap its grid to add points; optionally snap to a 0.5 m grid, or load one of four samples: a room, a desk, a 3–4–5 triangle, or a roof slope. Practice measurements are labeled separately from camera measurements.
+Release builds provide camera measurements only and require an ARCore-supported camera device. The developer practice canvas, presets and grid snapping are available only in debug builds for development and automated testing; they are hidden from release settings, recovery screens and help.
 
 ARCore measurements are estimates. Surface texture, lighting, motion, tracking quality, and distance affect accuracy. Moving the app to the background releases the camera; returning resumes the AR workflow.
 
@@ -79,7 +79,7 @@ ARCore measurements are estimates. Surface texture, lighting, motion, tracking q
 | Local history                           | Latest 200 saves, delete individual entries, confirm before clearing all                 |
 | Copy and sharing                        | Copy/share a result or the complete saved history through Android                        |
 | Preferences                             | Distance and angle unit selections persist between launches                              |
-| Practice canvas                         | Clearly labeled sample mode with four presets and optional 0.5 m snapping                |
+| Developer practice canvas               | Debug builds only; presets and grid snapping for development and testing                 |
 | Platform interface                      | Jetpack Compose with Material 3, system insets, and responsive portrait/landscape layout |
 | Unsupported device / missing permission | Explicit recovery and availability states                                                |
 | iOS                                     | Planned; no iOS app or ARKit adapter yet                                                 |
@@ -111,7 +111,7 @@ Shared JVM tests and Android compilation cannot verify camera tracking or physic
 - Missing/outdated Google Play Services for AR and an unsupported Android device.
 - Scanning, all four measurement modes, point placement, endpoint editing, undo/clear, and unit changes.
 - Saved history, restart persistence, individual delete, clear confirmation, copy, and Android sharing.
-- Practice presets, grid snapping, and switching between Practice and the camera.
+- Confirm release settings and recovery screens contain no practice canvas or sample entry points. Test developer presets and grid snapping separately in debug builds.
 - Home/app switching, screen rotation, screen lock/unlock, camera contention, and return from Settings.
 - Dark/bright scenes, low-texture surfaces, tracking loss and recovery, and known reference lengths.
 - Small and large displays, gesture navigation, large text, and TalkBack labels.

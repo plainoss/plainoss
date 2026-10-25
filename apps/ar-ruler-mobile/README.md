@@ -68,7 +68,7 @@ The output directory must be outside tracked source directories. Release builds 
 2. Slowly move the phone over a well-lit, textured surface until the aim indicator finds a point.
 3. Tap the compact measurement result to expand details and choose Distance, Path, Area, or Angle. Aim at each point and press **+** to place it. Distance takes two points; Path connects a series of points; Angle uses three points with the second point as its vertex. For Area, place at least three corners in order on one flat surface, then tap the first point or **Close area**. A translucent fill shows the polygon. After closing, **+** starts a new area.
 4. In every mode, tap a placed point or expand details and tap its number in **Move point**, including points outside the camera view. Selecting a point collapses details so you can aim at its new position and tap **Move**. Tap **Cancel**, the selected point, or Back to cancel. Moving a corner keeps a closed area closed. Undo reopens a closed area before removing corners; otherwise it removes the last point. Clear starts over.
-5. Change units without remeasuring. Save stays visible in the compact panel; expand details to copy a completed measurement. Share saved measurements from history through the Android sharesheet. Tap the result again or press Back to collapse details.
+5. Change units without remeasuring. Save stays visible in the compact panel; expand details to copy a completed measurement. Saving a camera measurement also captures the camera view with measurement lines and the result. History shows photo previews; tap one to enlarge it. Rename records, delete individual saves or clear history including their photos. Settings offers history limits of 20 (default), 50, 100 or 200, with confirmation before trimming existing records. Share saved measurement text from history through the Android sharesheet. Tap the result again or press Back to collapse details.
 
 Measurement details start collapsed, leaving more camera view visible. The original circular **+**, Undo and Clear controls float directly over the camera without a shared card background. The compact result panel is translucent; guidance and tracking warnings appear inside it instead of a large persistent camera overlay. Expanded details scroll on short displays.
 
@@ -76,20 +76,20 @@ Release builds provide camera measurements only and require an ARCore-supported 
 
 ARCore measurements are estimates. Surface texture, lighting, motion, tracking quality, and distance affect accuracy. Moving the app to the background releases the camera; returning resumes the AR workflow.
 
-| Capability                              | Android implementation                                                                   |
-| --------------------------------------- | ---------------------------------------------------------------------------------------- |
-| Camera on launch                        | Starts automatically after required permission and AR service checks                     |
-| World-space measurement                 | Native ARCore hit tests, anchored points, live previews, and projected measurement lines |
-| Measurement modes                       | Distance, connected path length, planar polygon area, and three-point angle              |
-| Editing                                 | Reposition endpoints, undo the last point, or clear the measurement                      |
-| Units                                   | Meters, centimeters, millimeters, inches, feet, yards; degrees or radians for angles     |
-| Local history                           | Latest 200 saves, delete individual entries, confirm before clearing all                 |
-| Copy and sharing                        | Copy/share a result or the complete saved history through Android                        |
-| Preferences                             | Distance and angle unit selections persist between launches                              |
-| Developer practice canvas               | Debug builds only; presets and grid snapping for development and testing                 |
-| Platform interface                      | Jetpack Compose with Material 3, system insets, and responsive portrait/landscape layout |
-| Unsupported device / missing permission | Explicit recovery and availability states                                                |
-| iOS                                     | Planned; no iOS app or ARKit adapter yet                                                 |
+| Capability                              | Android implementation                                                                                 |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Camera on launch                        | Starts automatically after required permission and AR service checks                                   |
+| World-space measurement                 | Native ARCore hit tests, anchored points, live previews, and projected measurement lines               |
+| Measurement modes                       | Distance, connected path length, planar polygon area, and three-point angle                            |
+| Editing                                 | Reposition endpoints, undo the last point, or clear the measurement                                    |
+| Units                                   | Meters, centimeters, millimeters, inches, feet, yards; degrees or radians for angles                   |
+| Local history                           | 20 saves by default (50/100/200 configurable), photo previews, rename, delete, clear with confirmation |
+| Copy and sharing                        | Copy/share a result or the complete saved history through Android                                      |
+| Preferences                             | Distance and angle unit selections persist between launches                                            |
+| Developer practice canvas               | Debug builds only; presets and grid snapping for development and testing                               |
+| Platform interface                      | Jetpack Compose with Material 3, system insets, and responsive portrait/landscape layout               |
+| Unsupported device / missing permission | Explicit recovery and availability states                                                              |
+| iOS                                     | Planned; no iOS app or ARKit adapter yet                                                               |
 
 ## Modules and iOS extension
 
@@ -117,7 +117,8 @@ Shared JVM tests and Android compilation cannot verify camera tracking or physic
 - First launch, granted permission, denied permission, and permanent denial followed by Settings recovery.
 - Missing/outdated Google Play Services for AR and an unsupported Android device.
 - Scanning, all four measurement modes, point placement, endpoint editing, undo/clear, and unit changes.
-- Saved history, restart persistence, individual delete, clear confirmation, copy, and Android sharing.
+- Saved photos and overlay alignment in all four modes, portrait/landscape, rapid Save taps, backgrounding during capture, storage failure and tracking loss.
+- History previews and enlarged photos, rename persistence, legacy records without photos, history-limit migration and trimming confirmation, oldest-record eviction, individual delete, clear confirmation, associated photo cleanup, copy, and Android text sharing.
 - Confirm release settings and recovery screens contain no practice canvas or sample entry points. Test developer presets and grid snapping separately in debug builds.
 - Home/app switching, screen rotation, screen lock/unlock, camera contention, and return from Settings.
 - Dark/bright scenes, low-texture surfaces, tracking loss and recovery, and known reference lengths.

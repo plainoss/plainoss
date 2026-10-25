@@ -51,6 +51,15 @@ import app.plainoss.arruler.ar.ArFrame
 import app.plainoss.arruler.core.*
 import java.util.UUID
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.CancellationException
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 
 @Composable
 fun RulerApp(
@@ -74,6 +83,11 @@ fun RulerApp(
         var unit by remember { mutableStateOf(store.unit) }
         var angleUnit by remember { mutableStateOf(store.angleUnit) }
         var history by remember { mutableStateOf(store.loadHistory()) }
+        var historyLimit by remember { mutableIntStateOf(store.historyLimit) }
+        var choosingInitialLimit by remember { mutableStateOf(store.needsHistoryLimitChoice) }
+        var pendingLimit by remember { mutableStateOf<Int?>(null) }
+        var saving by remember { mutableStateOf(false) }
+        val photoDensity = LocalDensity.current
         var practiceSnapshot by remember { mutableStateOf(MeasurementSnapshot(mode)) }
         var practiceSelectedPoint by remember { mutableStateOf<Int?>(null) }
         var practiceBounds by remember { mutableStateOf<List<Point3D>>(emptyList()) }
@@ -250,26 +264,83 @@ fun RulerApp(
                 haptics.performHapticFeedback(HapticFeedbackType.LongPress)
             }
         }
-        val save: () -> Unit = {
-            if (snapshot.canSave && canMeasure && selectedPoint == null) {
-                val record =
-                    MeasurementRecord(
-                        id = UUID.randomUUID().toString(),
-                        timestamp = System.currentTimeMillis(),
-                        mode = snapshot.mode,
-                        value = snapshot.value,
-                        unit = unit,
-                        angleUnit = angleUnit,
-                        points = snapshot.points.toList(),
-                        label = if (practice) "Practice" else "AR measurement",
-                    )
-                history = (listOf(record) + history).take(MeasurementStore.MAX_RECORDS)
-                store.saveHistory(history)
-                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                notify("Saved ${record.formatted}")
+        fun updateHistory(records: List<MeasurementRecord>, limit: Int? = null) {
+            if (saving) return
+            saving = true
+            scope.launch {
+                try {
+                    history = withContext(Dispatchers.IO) { store.saveHistory(records, limit) }
+                    historyLimit = store.historyLimit
+                    choosingInitialLimit = store.needsHistoryLimitChoice
+                    pendingLimit = null
+                } catch (error: Exception) {
+                    if (error is CancellationException) throw error
+                    notify("Could not update history. Please try again.")
+                } finally {
+                    saving = false
+                }
             }
         }
-        BackHandler(sheet == null && (detailsExpanded || snapshot.points.isNotEmpty())) {
+        val save: () -> Unit = {
+            if (choosingInitialLimit) {
+                sheet = "settings"
+                notify("Choose your history limit before saving")
+            } else if (!saving && snapshot.canSave && canMeasure && selectedPoint == null) {
+                saving = true
+                scope.launch {
+                    val id = UUID.randomUUID().toString()
+                    try {
+                        val capture = if (practice) null else withTimeout(3_000) {
+                            suspendCancellableCoroutine<ArController.Capture> { continuation ->
+                                controller.requestCapture { result ->
+                                    if (continuation.isActive) result.fold(
+                                        onSuccess = { continuation.resume(it) },
+                                        onFailure = { continuation.resumeWithException(it) },
+                                    )
+                                }
+                                continuation.invokeOnCancellation { controller.cancelCapture() }
+                            }
+                        }
+                        val capturedSnapshot = capture?.frame?.let {
+                            check(it.mode == snapshot.mode) { "Measurement changed" }
+                            MeasurementSnapshot(snapshot.mode, it.points, it.areaClosed)
+                        } ?: snapshot
+                        check(capturedSnapshot.canSave) { "Measurement is incomplete" }
+                        val record = MeasurementRecord(
+                            id = id, timestamp = System.currentTimeMillis(), mode = capturedSnapshot.mode,
+                            value = capturedSnapshot.value, unit = unit, angleUnit = angleUnit,
+                            points = capturedSnapshot.points.toList(),
+                            label = if (practice) "Practice" else "AR measurement",
+                            hasPhoto = capture != null,
+                        )
+                        // Do not dispatch a committed save back into a cancelled composition: the
+                        // next launch will reload it even if the activity disappears during disk I/O.
+                        val retained = withContext(Dispatchers.IO) {
+                            if (capture != null) {
+                                val photo = measurementPhoto(capture, record, photoDensity)
+                                try { store.writePhoto(id, photo) } finally { photo.recycle() }
+                            }
+                            try {
+                                store.saveHistory(listOf(record) + history, historyLimit)
+                            } catch (error: Exception) {
+                                store.deletePhoto(id)
+                                throw error
+                            }
+                        }
+                        history = retained
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        notify("Saved ${record.formatted}")
+                    } catch (error: Exception) {
+                        if (error is CancellationException && error !is kotlinx.coroutines.TimeoutCancellationException) throw error
+                        notify("Could not save measurement and photo. Hold steady and try again.")
+                    } finally {
+                        saving = false
+                    }
+                }
+            }
+        }
+        BackHandler(saving) { /* Keep the captured measurement unchanged until saving finishes. */ }
+        BackHandler(!saving && sheet == null && (detailsExpanded || snapshot.points.isNotEmpty())) {
             if (selectedPoint != null) cancelMove()
             else if (detailsExpanded) detailsExpanded = false
             else if (practice) practiceSnapshot = practiceSnapshot.undo() else controller.undo()
@@ -593,11 +664,15 @@ fun RulerApp(
                     "history" ->
                         HistorySheet(
                             history,
+                            store,
+                            if (choosingInitialLimit) null else historyLimit,
+                            onRename = { id, name ->
+                                updateHistory(history.map { if (it.id == id) it.copy(label = name) else it })
+                            },
                             copy,
                             share,
                             onDelete = { id ->
-                                history = history.filterNot { it.id == id }
-                                store.saveHistory(history)
+                                updateHistory(history.filterNot { it.id == id })
                             },
                             onClear = { showClearHistory = true },
                         )
@@ -667,6 +742,11 @@ fun RulerApp(
                                     )
                                 }
                             HorizontalDivider(Modifier.padding(vertical = 16.dp))
+                            HistoryLimitSettings(historyLimit, history.size, choosingInitialLimit) { selected ->
+                                if (history.size > selected) pendingLimit = selected
+                                else updateHistory(history, selected)
+                            }
+                            HorizontalDivider(Modifier.padding(vertical = 16.dp))
                             Text("Angle units", style = MaterialTheme.typography.titleMedium)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 AngleUnit.entries.forEach { candidate ->
@@ -711,7 +791,7 @@ fun RulerApp(
                             HorizontalDivider(Modifier.padding(vertical = 16.dp))
                             Text("A little guidance", style = MaterialTheme.typography.titleMedium)
                             Text(
-                                "Move your phone slowly over a well-lit, textured floor, table or wall. When the target turns green, aim at your starting point and press +. Move to the next point and repeat.\n\nDistance uses two points. Path adds connected segments. For Area, place at least three corners in order on one flat surface, then tap the first point or Close area. The filled shape remains translucent so you can see the surface. Press + after closing to start a new area. Angle uses three points, with the second as the vertex.\n\nTap a placed point or its number in Move point to select it. Aim at its new position and tap Move. Tap Cancel or the selected point again to cancel. Undo reopens a closed area before removing corners. Otherwise it removes the last point. Clear starts again. Save keeps a measurement in history. Units change the display without changing your points.\n\nAR provides an estimate. Reflective or plain surfaces and lost tracking can reduce accuracy.\n\nAll measurements stay on your device. No account, ads or analytics. History keeps the latest 200 saves. Camera images are never saved.",
+                                "Move your phone slowly over a well-lit, textured floor, table or wall. When the target turns green, aim at your starting point and press +. Move to the next point and repeat.\n\nDistance uses two points. Path adds connected segments. For Area, place at least three corners in order on one flat surface, then tap the first point or Close area. The filled shape remains translucent so you can see the surface. Press + after closing to start a new area. Angle uses three points, with the second as the vertex.\n\nTap a placed point or its number in Move point to select it. Aim at its new position and tap Move. Tap Cancel or the selected point again to cancel. Undo reopens a closed area before removing corners. Otherwise it removes the last point. Clear starts again. Save keeps a measurement in history. Units change the display without changing your points.\n\nAR provides an estimate. Reflective or plain surfaces and lost tracking can reduce accuracy.\n\nAll measurements stay on your device. No account, ads or analytics. History keeps the latest 20 saves by default; choose a larger limit in settings. Saving a camera measurement also saves a photo with its measurement overlay on this device. Delete a record or clear history to remove its photo.",
                                 color = Muted,
                                 style = MaterialTheme.typography.bodyMedium,
                                 modifier = Modifier.padding(top = 10.dp, bottom = 32.dp),
@@ -719,18 +799,25 @@ fun RulerApp(
                         }
                 }
             }
+        pendingLimit?.let { limit ->
+            AlertDialog(onDismissRequest = { pendingLimit = null },
+                title = { Text("Keep the latest $limit measurements?") },
+                text = { Text("This deletes ${history.size - limit} older measurements and their photos.") },
+                confirmButton = { TextButton(enabled = !saving, onClick = { updateHistory(history, limit) }) { Text("Delete older records") } },
+                dismissButton = { TextButton(onClick = { pendingLimit = null }) { Text("Cancel") } },
+            )
+        }
         if (showClearHistory)
             AlertDialog(
                 onDismissRequest = { showClearHistory = false },
                 title = { Text("Clear saved measurements?") },
                 text = {
-                    Text("This removes all ${history.size} saved measurements from this device.")
+                    Text("This removes all ${history.size} saved measurements and their photos from this device.")
                 },
                 confirmButton = {
                     TextButton(
                         onClick = {
-                            history = emptyList()
-                            store.saveHistory(history)
+                            updateHistory(emptyList())
                             showClearHistory = false
                         }
                     ) {
@@ -741,6 +828,19 @@ fun RulerApp(
                     TextButton(onClick = { showClearHistory = false }) { Text("Cancel") }
                 },
             )
+        if (saving) {
+            Dialog(onDismissRequest = {}, properties = DialogProperties(
+                dismissOnBackPress = false, dismissOnClickOutside = false)) {
+                Surface(shape = RoundedCornerShape(20.dp), color = Panel,
+                    contentColor = MaterialTheme.colorScheme.onSurface) {
+                    Row(Modifier.padding(24.dp), verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(Modifier.size(24.dp))
+                        Spacer(Modifier.width(16.dp))
+                        Text("Saving…")
+                    }
+                }
+            }
+        }
     }
 }
 

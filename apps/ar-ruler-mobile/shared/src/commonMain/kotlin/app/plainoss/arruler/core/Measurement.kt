@@ -17,6 +17,7 @@ data class MeasurementRecord(
     val angleUnit: AngleUnit,
     val points: List<Point3D>,
     val label: String = "",
+    val hasPhoto: Boolean = false,
 ) {
     val formatted: String
         get() = formatMeasurement(mode, value, unit, angleUnit)

@@ -20,6 +20,8 @@ The capture script refuses physical devices. It installs the debug app and instr
 
 The Console listing and source descriptions must be updated together. Publishing only the AAB does not upload the store listing. The Advertising ID declaration was completed as **No** on 25 October 2026 after checking the app code, SDK dependencies and merged release manifest; the app declares no `com.google.android.gms.permission.AD_ID` permission. Console declarations and listing changes remain pending the first release review.
 
+The four store cards and updated feature graphic are saved in Console in numeric card order and declared as created or edited using AI because their promotional layouts and captions were composed with AI assistance. The camera image is supplied by the maintainer and the component images are native emulator captures. The existing app icon is unchanged. Shared sheet headings and bottom-sheet content explicitly use the light `onSurface` color (14.9:1 contrast against `Panel`), including when an enclosing composition supplies black text.
+
 Suggested accessible descriptions:
 
 - Icon: “Lime ruler on a dark green background.”

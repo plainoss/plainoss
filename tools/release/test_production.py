@@ -142,6 +142,9 @@ class ArtifactTest(unittest.TestCase):
                          "commit": "tested-commit", "sha256": hashlib.sha256(b"tested").hexdigest()}
         self.publish_status = "success"
         self.downloads = 0
+        environment = patch.dict(os.environ, {"GITHUB_TRIGGERING_ACTOR": "developer"})
+        environment.start()
+        self.addCleanup(environment.stop)
 
     def gh(self, *args):
         if args[0] == "run":

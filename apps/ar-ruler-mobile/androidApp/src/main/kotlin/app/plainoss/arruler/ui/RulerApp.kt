@@ -358,7 +358,7 @@ fun RulerApp(
             val guidance =
                 if (practice) {
                     if (snapshot.points.isEmpty()) "Tap the grid to place a point" else null
-                } else if (!snapshot.canSave) instruction(snapshot, frame) else null
+                } else if (!snapshot.canSave || mode == MeasurementMode.DISTANCE) instruction(snapshot, frame) else null
             // Keep the same SurfaceView attached while practice mode pauses its camera.
             if (cameraGranted)
                 AndroidView(
@@ -392,9 +392,9 @@ fun RulerApp(
                     overlayProjection,
                     cameraProjection,
                     viewingArea,
-                    if (mode == MeasurementMode.DISTANCE && preview.isReady)
-                        preview.formatted(unit, angleUnit)
-                    else null,
+                    preview.segments.associate { segment ->
+                        segment.startIndex to "${segment.startIndex + 1}–${segment.endIndex + 1}: ${formatDistance(segment.length, unit)}"
+                    },
                     areaClosed = snapshot.areaClosed,
                     canCloseArea = snapshot.canCloseArea && selectedPoint == null,
                     modifier = Modifier.fillMaxSize(),
@@ -791,7 +791,7 @@ fun RulerApp(
                             HorizontalDivider(Modifier.padding(vertical = 16.dp))
                             Text("A little guidance", style = MaterialTheme.typography.titleMedium)
                             Text(
-                                "Move your phone slowly over a well-lit, textured floor, table or wall. When the target turns green, aim at your starting point and press +. Move to the next point and repeat.\n\nDistance uses two points. Path adds connected segments. For Area, place at least three corners in order on one flat surface, then tap the first point or Close area. The filled shape remains translucent so you can see the surface. Press + after closing to start a new area. Angle uses three points, with the second as the vertex.\n\nTap a placed point or its number in Move point to select it. Aim at its new position and tap Move. Tap Cancel or the selected point again to cancel. Undo reopens a closed area before removing corners. Otherwise it removes the last point. Clear starts again. Save keeps a measurement in history. Units change the display without changing your points.\n\nAR provides an estimate. Reflective or plain surfaces and lost tracking can reduce accuracy.\n\nAll measurements stay on your device. No account, ads or analytics. History keeps the latest 20 saves by default; choose a larger limit in settings. Saving a camera measurement also saves a photo with its measurement overlay on this device. Delete a record or clear history to remove its photo.",
+                                "Move your phone slowly over a well-lit, textured floor, table or wall. When the target turns green, aim at your starting point and press +. Move to the next point and repeat.\n\nDistance uses pairs of points: after completing one distance, press + twice to add another without clearing the first. Save keeps all completed distances together in one photo. Finish the current pair or Undo its starting point before saving. Path adds connected segments, each labelled with its length; the result panel shows the total. For Area, place at least three corners in order on one flat surface, then tap the first point or Close area. The filled shape remains translucent so you can see the surface. Press + after closing to start a new area. Angle uses three points, with the second as the vertex.\n\nTap a placed point or its number in Move point to select it. Aim at its new position and tap Move. Tap Cancel or the selected point again to cancel. Undo reopens a closed area before removing corners. Otherwise it removes the last point. Clear starts again. Save keeps a measurement in history. Units change the display without changing your points.\n\nAR provides an estimate. Reflective or plain surfaces and lost tracking can reduce accuracy.\n\nAll measurements stay on your device. No account, ads or analytics. History keeps the latest 20 saves by default; choose a larger limit in settings. Saving a camera measurement also saves a photo with its measurement overlay on this device. Delete a record or clear history to remove its photo.",
                                 color = Muted,
                                 style = MaterialTheme.typography.bodyMedium,
                                 modifier = Modifier.padding(top = 10.dp, bottom = 32.dp),
@@ -853,6 +853,10 @@ private fun instruction(snapshot: MeasurementSnapshot, frame: ArFrame): String =
             "Area closed · Save it or press + to start another"
         snapshot.canCloseArea -> "Tap the first point or Close area to finish"
         frame.target == null -> "Move slowly over a textured surface"
+        snapshot.mode == MeasurementMode.DISTANCE && snapshot.isComplete ->
+            "Save all distances, or press + to start another"
+        snapshot.mode == MeasurementMode.DISTANCE && snapshot.points.size % 2 == 1 ->
+            "Place the end of distance ${snapshot.points.size / 2 + 1}"
         snapshot.isComplete -> "Measurement ready. Save it or start a new one."
         snapshot.points.isEmpty() -> "Aim at your starting point, then press +"
         snapshot.mode == MeasurementMode.ANGLE && snapshot.points.size == 1 ->

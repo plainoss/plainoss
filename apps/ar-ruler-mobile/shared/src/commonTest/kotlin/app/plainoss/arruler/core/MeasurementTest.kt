@@ -35,7 +35,7 @@ class MeasurementTest {
     }
 
     @Test
-    fun distanceRestartsAfterCompletionAndUndoReturnsToIncompleteState() {
+    fun distanceKeepsCompletedPairsAndUndoReturnsToIncompleteState() {
         val initial = MeasurementSnapshot()
         assertFalse(initial.isReady)
         assertFalse(initial.canSave)
@@ -49,11 +49,44 @@ class MeasurementTest {
         assertEquals(first, complete.undo())
         assertFalse(complete.undo().isReady)
         assertEquals(
-            listOf(Point3D(5.0, 0.0, 0.0)),
+            complete.points + Point3D(5.0, 0.0, 0.0),
             complete.addPoint(Point3D(5.0, 0.0, 0.0)).points,
         )
         assertEquals(initial, complete.clear())
         assertEquals(initial, initial.undo())
+    }
+
+    @Test
+    fun independentDistancesKeepTheirValuesWhenEditingUndoingAndSavingTogether() {
+        val first = MeasurementSnapshot().addPoint(Point3D.ZERO).addPoint(Point3D(2.0, 0.0, 0.0))
+        val pending = first.addPoint(Point3D(10.0, 0.0, 0.0))
+        assertFalse(pending.canSave)
+        assertFalse(pending.isComplete)
+        assertEquals(listOf(2.0), pending.segments.map { it.length })
+        val group = pending.addPoint(Point3D(10.0, 3.0, 0.0))
+        assertTrue(group.canSave)
+        assertEquals(listOf(2.0, 3.0), group.segments.map { it.length })
+        assertEquals(listOf(0, 2), group.segments.map { it.startIndex })
+        assertEquals(3.0, group.value)
+        assertEquals("1: 2 m · 2: 3 m", group.formatted())
+        assertEquals("1: 200 cm · 2: 300 cm", group.formatted(DistanceUnit.CENTIMETERS))
+        assertEquals(listOf(4.0, 3.0), group.movePoint(1, Point3D(4.0, 0.0, 0.0)).segments.map { it.length })
+        assertEquals(pending, group.undo())
+        assertEquals(first, group.undo().undo())
+        assertEquals(MeasurementSnapshot(), group.clear())
+        val record = MeasurementRecord("group", 1L, group.mode, group.value,
+            DistanceUnit.METERS, AngleUnit.DEGREES, group.points)
+        assertEquals(group.formatted(), record.formatted)
+    }
+
+    @Test
+    fun pathSegmentsKeepTheirIndividualLengthsAndTotal() {
+        val path = MeasurementSnapshot(MeasurementMode.PATH,
+            listOf(Point3D.ZERO, Point3D(3.0, 0.0, 0.0), Point3D(3.0, 4.0, 0.0)))
+        assertEquals(listOf(3.0, 4.0), path.segments.map { it.length })
+        assertEquals(7.0, path.value)
+        assertEquals("7 m", path.formatted())
+        assertEquals(listOf(1, 2), path.segments.map { it.endIndex })
     }
 
     @Test

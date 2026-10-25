@@ -32,6 +32,8 @@ data class MeasurementSegment(
     val start: ViewportPoint,
     val end: ViewportPoint,
     val isPreview: Boolean = false,
+    val startIndex: Int = 0,
+    val endIndex: Int = 1,
 )
 
 data class MeasurementProjection(
@@ -66,13 +68,15 @@ fun projectMeasurement(
     if (replacing) effectivePoints[selected!!] = target
 
     val complete =
-        (mode == MeasurementMode.AREA && areaClosed) ||
+        (mode == MeasurementMode.DISTANCE && points.size % 2 == 0) ||
+            (mode == MeasurementMode.AREA && areaClosed) ||
             (mode.maximumPoints?.let { points.size >= it } ?: false)
     val appending =
         preview && selectedPointIndex == null && target != null && points.isNotEmpty() && !complete
 
     val edges = mutableListOf<ProjectionEdge>()
-    for (index in 0 until points.lastIndex) {
+    val step = if (mode == MeasurementMode.DISTANCE) 2 else 1
+    for (index in 0 until points.lastIndex step step) {
         edges +=
             ProjectionEdge(
                 index,
@@ -115,7 +119,7 @@ fun projectMeasurement(
         val b = effectivePoints[edge.end] ?: return@mapNotNull null
         val frustumSegment = clipSegmentToViewport(a, b, width, height) ?: return@mapNotNull null
         val visible = clipToViewingArea(frustumSegment, viewingArea) ?: return@mapNotNull null
-        MeasurementSegment(visible.start, visible.end, edge.preview)
+        MeasurementSegment(visible.start, visible.end, edge.preview, edge.start, edge.end)
     }
     val fill =
         if (
@@ -128,16 +132,12 @@ fun projectMeasurement(
                 viewingArea,
             )
         } else emptyList()
-    val edgeOn =
-        if (mode == MeasurementMode.DISTANCE && projected.size == 2) {
-            val a = projected[0]
-            val b = projected[1]
-            a != null &&
-                b != null &&
-                minimumLengthPixels.isFinite() &&
-                minimumLengthPixels >= 0.0 &&
-                hypot(b.x - a.x, b.y - a.y) <= minimumLengthPixels
-        } else false
+    val edgeOn = mode == MeasurementMode.DISTANCE && edges.any { edge ->
+        val a = projected[edge.start]
+        val b = projected[edge.end]
+        a != null && b != null && minimumLengthPixels.isFinite() && minimumLengthPixels >= 0.0 &&
+            hypot(b.x - a.x, b.y - a.y) <= minimumLengthPixels
+    }
 
     return MeasurementProjection(
         points = projected.take(points.size),

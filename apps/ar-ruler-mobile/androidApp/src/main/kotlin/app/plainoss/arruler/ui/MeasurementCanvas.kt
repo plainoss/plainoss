@@ -17,6 +17,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.plainoss.arruler.ar.ArFrame
@@ -39,7 +41,7 @@ internal fun MeasurementOverlay(
     projection: MeasurementProjection,
     cameraProjection: MeasurementProjection,
     viewingArea: ViewportRect,
-    distanceText: String?,
+    segmentTexts: Map<Int, String>,
     areaClosed: Boolean,
     canCloseArea: Boolean,
     modifier: Modifier,
@@ -81,7 +83,7 @@ internal fun MeasurementOverlay(
             }
         }
     ) {
-        drawMeasurement(frame, mode, projection, cameraProjection, viewingArea, distanceText,
+        drawMeasurement(frame, mode, projection, cameraProjection, viewingArea, segmentTexts,
             areaClosed, canCloseArea, paint)
     }
 }
@@ -92,7 +94,7 @@ internal fun DrawScope.drawMeasurement(
     projection: MeasurementProjection,
     cameraProjection: MeasurementProjection,
     viewingArea: ViewportRect,
-    distanceText: String?,
+    segmentTexts: Map<Int, String>,
     areaClosed: Boolean,
     canCloseArea: Boolean,
     paint: Paint,
@@ -154,17 +156,19 @@ internal fun DrawScope.drawMeasurement(
                 )
             }
         }
-        if (mode == MeasurementMode.DISTANCE && distanceText != null && viewingArea.isValid) {
-            cameraProjection.segments.firstOrNull()?.let { segment ->
+        if (viewingArea.isValid && bottom - top >= 30.dp.toPx()) {
+            cameraProjection.segments.forEach { segment ->
+                val text = segmentTexts[segment.startIndex] ?: return@forEach
                 val mid = (position(segment.start) + position(segment.end)) / 2f
                 paint.textSize = 16.sp.toPx()
                 paint.color = android.graphics.Color.WHITE
                 paint.setShadowLayer(6.dp.toPx(), 0f, 1f, android.graphics.Color.BLACK)
                 // Position the label on the visible portion, but retain the complete world
-                // distance (the same value as the card, including a live/moving-point preview).
+                // length of each segment, including a live/moving-point preview.
                 drawContext.canvas.nativeCanvas.drawText(
-                    distanceText,
-                    mid.x,
+                    text,
+                    mid.x.coerceIn(paint.measureText(text).coerceAtMost(size.width) / 2f,
+                        size.width - paint.measureText(text).coerceAtMost(size.width) / 2f),
                     (mid.y - 16.dp.toPx())
                         .coerceAtLeast(top + 22.dp.toPx())
                         .coerceAtMost(bottom - 8.dp.toPx()),
@@ -211,7 +215,8 @@ internal fun PracticeCanvas(
         fun project(p: Point3D) =
             Offset(origin.x + p.x.toFloat() * scale, origin.y + (p.z - p.y * .55).toFloat() * scale)
         Canvas(
-            Modifier.fillMaxSize().pointerInput(snapshot, snap, scale, selectedPoint) {
+            Modifier.fillMaxSize().semantics { contentDescription = "Practice measurement canvas" }
+                .pointerInput(snapshot, snap, scale, selectedPoint) {
                 detectTapGestures { tap ->
                     val hit =
                         snapshot.points.indices.lastOrNull { index ->
@@ -259,7 +264,19 @@ internal fun PracticeCanvas(
                         else PathEffect.dashPathEffect(floatArrayOf(8.dp.toPx(), 5.dp.toPx())),
                 )
             }
-            points.zipWithNext().forEach { (a, b) -> drawLine(Lime, a, b, 3.dp.toPx()) }
+            val step = if (snapshot.mode == MeasurementMode.DISTANCE) 2 else 1
+            (0 until points.lastIndex step step).forEach { index ->
+                drawLine(Lime, points[index], points[index + 1], 3.dp.toPx())
+            }
+            snapshot.segments.forEach { segment ->
+                val mid = (points[segment.startIndex] + points[segment.endIndex]) / 2f
+                paint.textSize = 16.sp.toPx()
+                paint.color = android.graphics.Color.WHITE
+                paint.setShadowLayer(6.dp.toPx(), 0f, 1f, android.graphics.Color.BLACK)
+                drawContext.canvas.nativeCanvas.drawText(
+                    "${segment.startIndex + 1}–${segment.endIndex + 1}: ${formatDistance(segment.length, unit)}",
+                    mid.x, mid.y - 20.dp.toPx(), paint)
+            }
             paint.textSize = 12.sp.toPx()
             paint.color = android.graphics.Color.WHITE
             points.forEachIndexed { i, p ->

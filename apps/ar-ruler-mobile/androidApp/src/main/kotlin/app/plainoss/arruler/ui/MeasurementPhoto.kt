@@ -39,7 +39,9 @@ internal fun measurementPhoto(capture: ArController.Capture, record: Measurement
         CanvasDrawScope().draw(Density(density.density * scale, density.fontScale), LayoutDirection.Ltr,
             ComposeCanvas(Canvas(bitmap)), Size(width.toFloat(), height.toFloat())) {
             drawMeasurement(frame, record.mode, projection, projection, area,
-                if (record.mode == MeasurementMode.DISTANCE) record.formatted else null,
+                measuredSegments(record.mode, record.points).associate { segment ->
+                    segment.startIndex to "${segment.startIndex + 1}–${segment.endIndex + 1}: ${formatDistance(segment.length, record.unit)}"
+                },
                 frame.areaClosed, false, Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER })
         }
         val canvas = Canvas(bitmap)
@@ -49,7 +51,12 @@ internal fun measurementPhoto(capture: ArController.Capture, record: Measurement
         paint.color = Color.argb(200, 10, 20, 15)
         canvas.drawRect(0f, height - footer, width.toFloat(), height.toFloat(), paint)
         paint.color = Color.WHITE
-        canvas.drawText("${record.mode.label}: ${record.formatted}", paint.textSize * .5f,
+        val summary = when {
+            record.mode == MeasurementMode.DISTANCE && record.points.size > 2 -> "${record.points.size / 2} distances"
+            record.mode == MeasurementMode.PATH -> "Path total: ${record.formatted}"
+            else -> "${record.mode.label}: ${record.formatted}"
+        }
+        canvas.drawText(summary, paint.textSize * .5f,
             height - paint.textSize * .8f, paint)
         return bitmap
     } catch (error: Throwable) {

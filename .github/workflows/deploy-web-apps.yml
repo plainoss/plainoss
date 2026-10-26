@@ -4,8 +4,8 @@ on:
   push:
     branches: [main]
     paths:
-      - 'apps/web-*/**'
-      - 'packages/core/**'
+      - "apps/web-*/**"
+      - "packages/core/**"
 
 jobs:
   build-and-deploy:
@@ -20,7 +20,9 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 22
+          # Keep Node 22 current, with the CVE-2026-111497 fix as the minimum.
+          node-version: "^22.23.4"
+          check-latest: true
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6

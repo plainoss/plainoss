@@ -1,6 +1,8 @@
-Measure your space with your camera.
+Simple tools. Free and open source. No ads, bloat or other annoyances.
 
-AR Ruler is a free, open-source tool for estimating everyday measurements with your Android camera. Place points on a detected surface, adjust them, and keep the results you need.
+That's the PlainOSS approach: useful tools without the unnecessary fuss. No account required.
+
+AR Ruler helps you estimate everyday measurements with your Android camera. Place points on a detected surface, adjust them, and keep the results you need.
 
 FOUR WAYS TO MEASURE
 • Distance: measure between two points.

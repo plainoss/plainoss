@@ -115,7 +115,7 @@ def verify(args):
             f"--ks-pass=file:{store_password}", f"--key-pass=file:{key_password}")
         with zipfile.ZipFile(apks) as archive:
             archive.extract("universal.apk", temp)
-        zipalign = Path(os.environ["ANDROID_HOME"]) / "build-tools/35.0.0/zipalign"
+        zipalign = Path(os.environ["ANDROID_HOME"]) / "build-tools/36.0.0/zipalign"
         packaging = run(str(zipalign), "-c", "-P", "16", "-v", "4", str(Path(temp) / "universal.apk"))
     checksum = hashlib.sha256(bundle.read_bytes()).hexdigest()
     result = {

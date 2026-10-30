@@ -196,7 +196,7 @@ export function resolveSdk(
     if (candidate && validSdk(candidate)) return path.resolve(candidate);
   }
   throw new Error(
-    "No Android SDK found. Install Android SDK Platform 36 with Android Studio, then set ANDROID_HOME " +
+    "No Android SDK found. Install Android SDK Platform 37 with Android Studio, then set ANDROID_HOME " +
       "to the SDK directory, or set sdk.dir in apps/ar-ruler-mobile/local.properties.",
   );
 }

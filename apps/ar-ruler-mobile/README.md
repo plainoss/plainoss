@@ -8,8 +8,8 @@ The [web app](../web-ar-ruler) uses the TypeScript engine in `packages/core`. Th
 
 Prerequisites:
 
-- JDK 17 or 21. Gradle 8.14.3 does not run on JDK 25; all app bytecode targets Java 17.
-- Android SDK Platform 36 and current Android SDK command-line tools. Accept SDK licenses through Android Studio's SDK Manager or `sdkmanager --licenses`.
+- JDK 17 or 21. All app bytecode targets Java 17.
+- Android SDK Platform 37 and current Android SDK command-line tools. Accept SDK licenses through Android Studio's SDK Manager or `sdkmanager --licenses`.
 - A current Android Studio release for IDE support, or the checked-in Gradle wrapper for command-line builds. No globally installed Gradle is required.
 
 Open `apps/ar-ruler-mobile` as a project in Android Studio. Point `ANDROID_HOME` at the Android SDK, or create an untracked `local.properties` containing `sdk.dir=/absolute/path/to/Android/sdk`. Select JDK 17 or 21 as the Gradle JDK.
@@ -108,7 +108,7 @@ The shared module uses the Android Kotlin Multiplatform library plugin, plus a J
 
 When adding iOS, add Apple targets to `shared`, expose a framework to an iOS application, and implement an ARKit adapter with the same point-placement and measurement-state contracts. Keep camera permissions, session lifecycle, and platform interface behavior native. Apple targets are deliberately deferred so Android development and CI do not require Xcode.
 
-Build dependencies are pinned to Kotlin 2.2.20, Android Gradle Plugin 8.11.1, Gradle 8.14.3, Compose BOM 2025.10.00, and ARCore 1.57.0. See the [Kotlin compatibility table](https://kotlinlang.org/docs/gradle-configure-project.html), [Android KMP plugin guide](https://developer.android.com/kotlin/multiplatform/plugin), and [ARCore Android documentation](https://developers.google.com/ar/develop/java).
+Build dependencies are pinned to Kotlin 2.4.21, Android Gradle Plugin 9.5.0 (built-in Kotlin), Gradle 9.8.2, Compose BOM 2026.09.00, and ARCore 1.57.0. See the [Kotlin compatibility table](https://kotlinlang.org/docs/gradle-configure-project.html), [Android KMP plugin guide](https://developer.android.com/kotlin/multiplatform/plugin), and [ARCore Android documentation](https://developers.google.com/ar/develop/java).
 
 ## Device verification
 

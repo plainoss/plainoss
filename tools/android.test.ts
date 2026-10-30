@@ -101,7 +101,7 @@ test("SDK config has Gradle precedence and invalid sdk.dir cannot silently fall 
     );
     assert.throws(
       () => resolveSdk(project, {}, []),
-      /Install Android SDK Platform 36/,
+      /Install Android SDK Platform 37/,
     );
   } finally {
     rmSync(root, { recursive: true, force: true });

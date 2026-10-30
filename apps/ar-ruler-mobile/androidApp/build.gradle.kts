@@ -2,7 +2,6 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.play.publisher)
 }
@@ -14,7 +13,7 @@ require(releaseName.isNotBlank()) { "ANDROID_VERSION_NAME must not be blank" }
 val signingVariables = listOf("ANDROID_KEYSTORE_PATH", "ANDROID_KEYSTORE_PASSWORD", "ANDROID_KEY_ALIAS", "ANDROID_KEY_PASSWORD")
 val signingValues = signingVariables.associateWith { providers.environmentVariable(it).orNull }
 val hasReleaseSigning = signingValues.values.all { !it.isNullOrBlank() }
-val validateReleaseCredentials by tasks.registering {
+val validateReleaseCredentials = tasks.register("validateReleaseCredentials") {
     doLast {
         check(hasReleaseSigning) { "Release signing requires: ${signingVariables.joinToString()}" }
     }
@@ -22,7 +21,7 @@ val validateReleaseCredentials by tasks.registering {
 
 android {
     namespace = "app.plainoss.arruler"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "app.plainoss.arruler"
@@ -106,6 +105,10 @@ dependencies {
     implementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    // Compose still pulls Espresso 3.5, whose input injection fails on Android 17.
+    androidTestImplementation(libs.androidx.test.espresso.core)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.junit)
     debugImplementation("androidx.compose.ui:ui-test-manifest")
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.foundation)

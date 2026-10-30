@@ -33,8 +33,8 @@ plainoss/
 ### Prerequisites
 
 - Node.js >= 20.0.0
-- pnpm >= 10.0.0
-- For Android development: JDK 17 or 21 and Android SDK Platform 36.
+- pnpm 10.34.9 (pinned in `package.json`)
+- For Android development: JDK 17 or 21 and Android SDK Platform 37.
 
 ### Installation
 
@@ -54,7 +54,7 @@ pnpm run test
 # Build web apps and TypeScript packages
 pnpm run build
 
-# Build AR Ruler's Android debug APK (JDK 17 or 21 + Android SDK 36)
+# Build AR Ruler's Android debug APK (JDK 17 or 21 + Android SDK 37)
 pnpm run android:build
 
 # Test AR Ruler's shared Kotlin core, lint Android, and build its debug APK

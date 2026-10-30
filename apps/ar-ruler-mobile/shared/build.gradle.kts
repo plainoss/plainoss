@@ -6,9 +6,9 @@ plugins {
 }
 
 kotlin {
-    androidLibrary {
+    android {
         namespace = "app.plainoss.arruler.shared"
-        compileSdk = 36
+        compileSdk = 37
         minSdk = 26
         compilerOptions {
             jvmTarget.set(JvmTarget.JVM_17)

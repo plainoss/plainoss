@@ -18,8 +18,8 @@ Thank you for your interest in contributing to PlainOSS! We are building a colle
 ### Prerequisites
 
 - Node.js >= 20.0.0
-- pnpm >= 10.0.0
-- For Android development: JDK 17 or 21 and Android SDK Platform 36.
+- pnpm 10.34.9 (pinned in `package.json`)
+- For Android development: JDK 17 or 21 and Android SDK Platform 37.
 
 ### Getting Started
 

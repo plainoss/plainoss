@@ -30,7 +30,7 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
-          version: 10.13.1
+          version: 10.34.9
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -62,19 +62,19 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Setup Java
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
         with:
-          packages: "platform-tools platforms;android-36 build-tools;35.0.0"
+          packages: "platform-tools platforms;android-37.0 build-tools;36.0.0"
           log-accepted-android-sdk-licenses: false
 
       - name: Setup Gradle and validate wrapper
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
 
       - name: Verify Android app and shared core
         run: ./gradlew :shared:jvmTest :androidApp:lintDebug :androidApp:assembleDebug :androidApp:assembleDebugAndroidTest

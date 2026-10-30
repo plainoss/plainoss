@@ -263,7 +263,7 @@ Android-first Kotlin Multiplatform app with a native Compose Material 3 interfac
 
 ## Build
 
-Install JDK 17 or 21 and Android SDK Platform 36. Set ANDROID_HOME to the SDK directory, or create an untracked local.properties containing sdk.dir=/absolute/path/to/Android/sdk. Select the same JDK as Android Studio's Gradle JDK.
+Install JDK 17 or 21 and Android SDK Platform 37. Set ANDROID_HOME to the SDK directory, or create an untracked local.properties containing sdk.dir=/absolute/path/to/Android/sdk. Select the same JDK as Android Studio's Gradle JDK.
 
 Run from this directory (use gradlew.bat on Windows):
 
